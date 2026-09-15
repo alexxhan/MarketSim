@@ -7,16 +7,11 @@ class OrderBook:
         self.bids: list[Order] = []
         self.asks: list[Order] = []
 
-    # --------------------------------
-    # Add order
-    # --------------------------------
 
     def add_order(self, order: Order):
         if order.side == OrderSide.BUY:
             self.bids.append(order)
 
-            # Highest price first.
-            # If prices are equal, oldest order first.
             self.bids.sort(
                 key=lambda order: (
                     -order.price,
@@ -27,8 +22,6 @@ class OrderBook:
         elif order.side == OrderSide.SELL:
             self.asks.append(order)
 
-            # Lowest price first.
-            # If prices are equal, oldest order first.
             self.asks.sort(
                 key=lambda order: (
                     order.price,
@@ -36,9 +29,6 @@ class OrderBook:
                 )
             )
 
-    # --------------------------------
-    # Cancel order
-    # --------------------------------
 
     def cancel_order(self, order_id: int) -> bool:
         for index, order in enumerate(self.bids):
@@ -53,9 +43,6 @@ class OrderBook:
 
         return False
 
-    # --------------------------------
-    # Best bid
-    # --------------------------------
 
     def get_best_bid(self):
         if not self.bids:
@@ -63,9 +50,6 @@ class OrderBook:
 
         return self.bids[0]
 
-    # --------------------------------
-    # Best ask
-    # --------------------------------
 
     def get_best_ask(self):
         if not self.asks:
@@ -73,9 +57,6 @@ class OrderBook:
 
         return self.asks[0]
 
-    # --------------------------------
-    # Midprice
-    # --------------------------------
 
     def get_midprice(self):
         best_bid = self.get_best_bid()
@@ -89,9 +70,6 @@ class OrderBook:
             + best_ask.price
         ) / 2
 
-    # --------------------------------
-    # Match orders
-    # --------------------------------
 
     def match_orders(self) -> list[Trade]:
         trades = []
