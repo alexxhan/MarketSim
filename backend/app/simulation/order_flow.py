@@ -8,32 +8,37 @@ class OrderFlowGenerator:
         self,
         starting_price: float = 100.0,
         tick_size: float = 0.01,
+        volatility: int = 1,
+        buy_pressure: float = 0.50,
         seed: int | None = None
     ):
+        if volatility < 0:
+            raise ValueError("Volatility must be 0 or greater")
+
+        if not 0.0 <= buy_pressure <= 1.0:
+            raise ValueError("Buy pressure must be between 0 and 1")
+
         self.reference_price = starting_price
         self.tick_size = tick_size
+        self.volatility = volatility
+        self.buy_pressure = buy_pressure
         self.next_order_id = 1
-
-        # Each generator gets its own independent RNG.
         self.rng = random.Random(seed)
 
     def generate_order(self) -> Order:
-        side = self.rng.choice([
-            OrderSide.BUY,
-            OrderSide.SELL
-        ])
+        if self.rng.random() < self.buy_pressure:
+            side = OrderSide.BUY
+        else:
+            side = OrderSide.SELL
 
         price_move = (
-            self.rng.choice([-1, 0, 1])
+            self.rng.randint(-self.volatility, self.volatility)
             * self.tick_size
         )
 
         self.reference_price += price_move
 
-        offset = (
-            self.rng.randint(-5, 5)
-            * self.tick_size
-        )
+        offset = self.rng.randint(-5, 5) * self.tick_size
 
         price = round(
             self.reference_price + offset,

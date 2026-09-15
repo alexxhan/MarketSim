@@ -8,36 +8,52 @@ class SimulationEngine:
     def __init__(
         self,
         strategy: str = "basic",
+        starting_price: float = 100.0,
+        volatility: int = 1,
+        buy_pressure: float = 0.50,
+        order_arrival_rate: int = 1,
+        spread: float = 0.04,
+        order_size: int = 10,
+        inventory_risk_factor: float = 0.001,
         seed: int | None = None
     ):
-        
+        if order_arrival_rate < 1:
+            raise ValueError("Order arrival rate must be at least 1")
+
+        self.strategy = strategy
+        self.starting_price = starting_price
+        self.volatility = volatility
+        self.buy_pressure = buy_pressure
+        self.order_arrival_rate = order_arrival_rate
+        self.spread = spread
+        self.order_size = order_size
+        self.inventory_risk_factor = inventory_risk_factor
+        self.seed = seed
+
         self.order_book = OrderBook()
 
         self.order_flow = OrderFlowGenerator(
-            starting_price=100.0,
+            starting_price=starting_price,
+            volatility=volatility,
+            buy_pressure=buy_pressure,
             seed=seed
         )
 
-        self.strategy = strategy
-        self.seed = seed
-
         if strategy == "basic":
             self.market_maker = BasicMarketMaker(
-                spread=0.04,
-                order_size=10
+                spread=spread,
+                order_size=order_size
             )
 
         elif strategy == "inventory":
             self.market_maker = InventoryMarketMaker(
-                spread=0.04,
-                order_size=10,
-                inventory_risk_factor=0.001
+                spread=spread,
+                order_size=order_size,
+                inventory_risk_factor=inventory_risk_factor
             )
 
         else:
-            raise ValueError(
-                f"Unknown strategy: {strategy}"
-            )
+            raise ValueError(f"Unknown strategy: {strategy}")
 
         self.tick = 0
         self.trades = []
@@ -56,13 +72,10 @@ class SimulationEngine:
             )
 
         midprice = self.order_book.get_midprice()
-
         market_maker_quotes = None
 
         if midprice is not None:
-            bid, ask = self.market_maker.generate_quotes(
-                midprice
-            )
+            bid, ask = self.market_maker.generate_quotes(midprice)
 
             self.order_book.add_order(bid)
             self.order_book.add_order(ask)
@@ -72,16 +85,23 @@ class SimulationEngine:
                 "ask": ask
             }
 
-        order = self.order_flow.generate_order()
+        generated_orders = []
+        new_trades = []
 
-        self.order_book.add_order(order)
+        for _ in range(self.order_arrival_rate):
+            order = self.order_flow.generate_order()
+            generated_orders.append(order)
 
-        new_trades = self.order_book.match_orders()
+            self.order_book.add_order(order)
+
+            trades = self.order_book.match_orders()
+
+            for trade in trades:
+                self.market_maker.process_trade(trade)
+
+            new_trades.extend(trades)
 
         self.trades.extend(new_trades)
-
-        for trade in new_trades:
-            self.market_maker.process_trade(trade)
 
         current_midprice = self.order_book.get_midprice()
 
@@ -89,23 +109,28 @@ class SimulationEngine:
         pnl = None
 
         if current_midprice is not None:
-            portfolio_value = (
-                self.market_maker.portfolio.get_value(
-                    current_midprice
-                )
+            portfolio_value = self.market_maker.portfolio.get_value(
+                current_midprice
             )
 
-            pnl = (
-                self.market_maker.portfolio.get_pnl(
-                    current_midprice
-                )
+            pnl = self.market_maker.portfolio.get_pnl(
+                current_midprice
             )
 
         return {
             "tick": self.tick,
             "strategy": self.strategy,
             "seed": self.seed,
-            "order": order,
+            "market_config": {
+                "starting_price": self.starting_price,
+                "volatility": self.volatility,
+                "buy_pressure": self.buy_pressure,
+                "order_arrival_rate": self.order_arrival_rate,
+                "spread": self.spread,
+                "order_size": self.order_size,
+                "inventory_risk_factor": self.inventory_risk_factor
+            },
+            "orders": generated_orders,
             "trades": new_trades,
             "market_maker_quotes": market_maker_quotes,
             "best_bid": self.order_book.get_best_bid(),
