@@ -40,9 +40,7 @@ for _ in range(100):
         )
 
 
-print("\n================================")
-print("FINAL MARKET MAKER PERFORMANCE")
-print("================================")
+print("\nFINAL MARKET MAKER PERFORMANCE\n")
 
 portfolio = engine.market_maker.portfolio
 midprice = engine.order_book.get_midprice()

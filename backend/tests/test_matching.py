@@ -4,7 +4,6 @@ from app.market.order_book import OrderBook
 
 book = OrderBook()
 
-# Existing sell orders
 book.add_order(
     Order(1, OrderSide.SELL, 100.05, 10)
 )
@@ -13,7 +12,6 @@ book.add_order(
     Order(2, OrderSide.SELL, 100.10, 15)
 )
 
-# Aggressive buyer
 book.add_order(
     Order(3, OrderSide.BUY, 100.10, 20)
 )

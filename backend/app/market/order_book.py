@@ -7,18 +7,38 @@ class OrderBook:
         self.bids: list[Order] = []
         self.asks: list[Order] = []
 
+    # --------------------------------
+    # Add order
+    # --------------------------------
+
     def add_order(self, order: Order):
         if order.side == OrderSide.BUY:
             self.bids.append(order)
+
+            # Highest price first.
+            # If prices are equal, oldest order first.
             self.bids.sort(
-                key=lambda order: (-order.price, order.timestamp)
+                key=lambda order: (
+                    -order.price,
+                    order.timestamp
+                )
             )
 
         elif order.side == OrderSide.SELL:
             self.asks.append(order)
+
+            # Lowest price first.
+            # If prices are equal, oldest order first.
             self.asks.sort(
-                key=lambda order: (order.price, order.timestamp)
+                key=lambda order: (
+                    order.price,
+                    order.timestamp
+                )
             )
+
+    # --------------------------------
+    # Cancel order
+    # --------------------------------
 
     def cancel_order(self, order_id: int) -> bool:
         for index, order in enumerate(self.bids):
@@ -33,17 +53,29 @@ class OrderBook:
 
         return False
 
+    # --------------------------------
+    # Best bid
+    # --------------------------------
+
     def get_best_bid(self):
         if not self.bids:
             return None
 
         return self.bids[0]
 
+    # --------------------------------
+    # Best ask
+    # --------------------------------
+
     def get_best_ask(self):
         if not self.asks:
             return None
 
         return self.asks[0]
+
+    # --------------------------------
+    # Midprice
+    # --------------------------------
 
     def get_midprice(self):
         best_bid = self.get_best_bid()
@@ -52,7 +84,14 @@ class OrderBook:
         if best_bid is None or best_ask is None:
             return None
 
-        return (best_bid.price + best_ask.price) / 2
+        return (
+            best_bid.price
+            + best_ask.price
+        ) / 2
+
+    # --------------------------------
+    # Match orders
+    # --------------------------------
 
     def match_orders(self) -> list[Trade]:
         trades = []
@@ -61,7 +100,6 @@ class OrderBook:
             best_bid = self.bids[0]
             best_ask = self.asks[0]
 
-            # No trade is possible
             if best_bid.price < best_ask.price:
                 break
 
@@ -70,7 +108,10 @@ class OrderBook:
                 best_ask.quantity
             )
 
-            trade_price = best_ask.price
+            if best_bid.timestamp < best_ask.timestamp:
+                trade_price = best_bid.price
+            else:
+                trade_price = best_ask.price
 
             trade = Trade(
                 buy_order_id=best_bid.order_id,
@@ -81,11 +122,9 @@ class OrderBook:
 
             trades.append(trade)
 
-            # Reduce remaining quantities
             best_bid.quantity -= trade_quantity
             best_ask.quantity -= trade_quantity
 
-            # Remove fully filled orders
             if best_bid.quantity == 0:
                 self.bids.pop(0)
 

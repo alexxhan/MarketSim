@@ -7,27 +7,40 @@ class OrderFlowGenerator:
     def __init__(
         self,
         starting_price: float = 100.0,
-        tick_size: float = 0.01
+        tick_size: float = 0.01,
+        seed: int | None = None
     ):
         self.reference_price = starting_price
         self.tick_size = tick_size
         self.next_order_id = 1
 
+        # Each generator gets its own independent RNG.
+        self.rng = random.Random(seed)
+
     def generate_order(self) -> Order:
-        side = random.choice([
+        side = self.rng.choice([
             OrderSide.BUY,
             OrderSide.SELL
         ])
 
-        # Randomly move the reference price slightly.
-        price_move = random.choice([-1, 0, 1]) * self.tick_size
+        price_move = (
+            self.rng.choice([-1, 0, 1])
+            * self.tick_size
+        )
+
         self.reference_price += price_move
 
-        # Generate an order near the current reference price.
-        offset = random.randint(-5, 5) * self.tick_size
-        price = round(self.reference_price + offset, 2)
+        offset = (
+            self.rng.randint(-5, 5)
+            * self.tick_size
+        )
 
-        quantity = random.randint(1, 20)
+        price = round(
+            self.reference_price + offset,
+            2
+        )
+
+        quantity = self.rng.randint(1, 20)
 
         order = Order(
             order_id=self.next_order_id,

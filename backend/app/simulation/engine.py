@@ -7,17 +7,20 @@ from app.strategies.inventory_market_maker import InventoryMarketMaker
 class SimulationEngine:
     def __init__(
         self,
-        strategy: str = "basic"
+        strategy: str = "basic",
+        seed: int | None = None
     ):
+        
         self.order_book = OrderBook()
 
         self.order_flow = OrderFlowGenerator(
-            starting_price=100.0
+            starting_price=100.0,
+            seed=seed
         )
 
         self.strategy = strategy
+        self.seed = seed
 
-        # Select market-making strategy
         if strategy == "basic":
             self.market_maker = BasicMarketMaker(
                 spread=0.04,
@@ -42,10 +45,6 @@ class SimulationEngine:
     def step(self):
         self.tick += 1
 
-        # --------------------------------
-        # 1. Cancel previous MM quotes
-        # --------------------------------
-
         if self.market_maker.active_bid_id is not None:
             self.order_book.cancel_order(
                 self.market_maker.active_bid_id
@@ -56,17 +55,9 @@ class SimulationEngine:
                 self.market_maker.active_ask_id
             )
 
-        # --------------------------------
-        # 2. Observe existing market
-        # --------------------------------
-
         midprice = self.order_book.get_midprice()
 
         market_maker_quotes = None
-
-        # --------------------------------
-        # 3. Place new MM quotes
-        # --------------------------------
 
         if midprice is not None:
             bid, ask = self.market_maker.generate_quotes(
@@ -81,32 +72,16 @@ class SimulationEngine:
                 "ask": ask
             }
 
-        # --------------------------------
-        # 4. Generate simulated trader
-        # --------------------------------
-
         order = self.order_flow.generate_order()
 
         self.order_book.add_order(order)
-
-        # --------------------------------
-        # 5. Match orders
-        # --------------------------------
 
         new_trades = self.order_book.match_orders()
 
         self.trades.extend(new_trades)
 
-        # --------------------------------
-        # 6. Update MM portfolio
-        # --------------------------------
-
         for trade in new_trades:
             self.market_maker.process_trade(trade)
-
-        # --------------------------------
-        # 7. Calculate portfolio metrics
-        # --------------------------------
 
         current_midprice = self.order_book.get_midprice()
 
@@ -126,13 +101,10 @@ class SimulationEngine:
                 )
             )
 
-        # --------------------------------
-        # 8. Return simulation state
-        # --------------------------------
-
         return {
             "tick": self.tick,
             "strategy": self.strategy,
+            "seed": self.seed,
             "order": order,
             "trades": new_trades,
             "market_maker_quotes": market_maker_quotes,
