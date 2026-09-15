@@ -1,7 +1,9 @@
 from app.simulation.engine import SimulationEngine
 
 
-engine = SimulationEngine()
+engine = SimulationEngine(
+    strategy="inventory"
+)
 
 
 for _ in range(100):
@@ -45,6 +47,7 @@ print("================================")
 portfolio = engine.market_maker.portfolio
 midprice = engine.order_book.get_midprice()
 
+print(f"Strategy: {engine.strategy}")
 print(f"Cash: ${portfolio.cash:,.2f}")
 print(f"Inventory: {portfolio.inventory:+d}")
 

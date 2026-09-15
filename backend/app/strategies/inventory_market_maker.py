@@ -2,15 +2,17 @@ from app.market.order import Order, OrderSide
 from app.market.portfolio import Portfolio
 
 
-class BasicMarketMaker:
+class InventoryMarketMaker:
     def __init__(
         self,
         spread: float = 0.04,
         order_size: int = 10,
-        starting_order_id: int = 1_000_000
+        inventory_risk_factor: float = 0.001,
+        starting_order_id: int = 2_000_000
     ):
         self.spread = spread
         self.order_size = order_size
+        self.inventory_risk_factor = inventory_risk_factor
         self.next_order_id = starting_order_id
 
         self.active_bid_id = None
@@ -25,10 +27,24 @@ class BasicMarketMaker:
         midprice: float
     ) -> tuple[Order, Order]:
 
+        inventory = self.portfolio.inventory
+
+        reservation_price = (
+            midprice
+            - inventory * self.inventory_risk_factor
+        )
+
         half_spread = self.spread / 2
 
-        bid_price = round(midprice - half_spread, 2)
-        ask_price = round(midprice + half_spread, 2)
+        bid_price = round(
+            reservation_price - half_spread,
+            2
+        )
+
+        ask_price = round(
+            reservation_price + half_spread,
+            2
+        )
 
         bid = Order(
             order_id=self.next_order_id,
