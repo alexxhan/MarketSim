@@ -72,6 +72,112 @@ type ExperimentResponse = {
   aggregates: { basic: ExperimentAggregate; inventory: ExperimentAggregate };
 };
 
+const sweepParameters = {
+  volatility: { label: "Volatility", defaults: "1, 2, 3, 4, 5" },
+  buy_pressure: { label: "Buy Pressure", defaults: "0.40, 0.45, 0.50, 0.55, 0.60" },
+  order_arrival_rate: { label: "Market Activity", defaults: "1, 2, 3, 4, 5" },
+  spread: { label: "Spread", defaults: "0.02, 0.04, 0.06, 0.08, 0.10" },
+  inventory_risk_factor: { label: "Inventory Risk Factor", defaults: "0.000, 0.001, 0.002, 0.003, 0.005" },
+};
+
+type SweepParameter = keyof typeof sweepParameters;
+type SweepResponse = {
+  config: { simulations_per_value: number; starting_seed: number; ticks: number };
+  sweep_parameter: SweepParameter;
+  results: { value: number; basic: ExperimentAggregate; inventory: ExperimentAggregate }[];
+};
+
+function sweepValueLabel(parameter: SweepParameter, value: number) {
+  return parameter === "buy_pressure" ? `${Number((value * 100).toFixed(6))}%` : String(value);
+}
+
+const sweepMetrics = [
+  ["average_pnl", "Average P&L", true],
+  ["pnl_standard_deviation", "P&L Std Dev", true],
+  ["best_pnl", "Best P&L", true],
+  ["worst_pnl", "Worst P&L", true],
+  ["average_absolute_inventory", "Average |Inventory|", false],
+  ["average_maximum_absolute_inventory", "Average Max |Inventory|", false],
+  ["worst_maximum_absolute_inventory", "Worst Max |Inventory|", false],
+  ["average_market_maker_fills", "Average MM Fills", false],
+  ["average_market_maker_executed_volume", "Average Executed Volume", false],
+] as const;
+
+function SweepResults({ sweep }: { sweep: SweepResponse }) {
+  const parameter = sweep.sweep_parameter;
+  const label = sweepParameters[parameter].label;
+  const chartPoints = [...sweep.results].sort((a, b) => a.value - b.value);
+  return (
+    <section className="mt-10 max-w-6xl space-y-6">
+      <h2 className="text-2xl font-semibold">Parameter Sweep Results: {label}</h2>
+      <p className="text-sm text-gray-500">
+        {sweep.config.simulations_per_value} seed pairs per value, {sweep.config.ticks} ticks each.
+        Every value uses seeds {sweep.config.starting_seed} through {sweep.config.starting_seed + sweep.config.simulations_per_value - 1}.
+        P&amp;L statistics exclude unavailable values and use population standard deviation. Chart gaps indicate unavailable P&amp;L.
+      </p>
+      {parameter === "inventory_risk_factor" && <p className="text-sm text-gray-500">Basic is an unchanged baseline at every risk factor. Only Inventory-Aware is affected.</p>}
+      <div className="overflow-x-auto rounded-xl bg-gray-900 p-4 text-gray-100">
+        <table className="w-full text-left text-sm">
+          <caption className="mb-3 text-left text-gray-400">Each cell shows Basic (blue) followed by Inventory-Aware (amber).</caption>
+          <thead>
+            <tr>
+              <th scope="col" className="p-3">{label}</th>
+              {sweepMetrics.map(([key, title]) => <th key={key} scope="col" className="min-w-32 p-3">{title}</th>)}
+              <th scope="col" className="min-w-32 p-3">P&amp;L Available / Missing</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sweep.results.map((point, index) => (
+              <tr key={index} className="border-t border-gray-700">
+                <th scope="row" className="whitespace-nowrap p-3">{sweepValueLabel(parameter, point.value)}</th>
+                {sweepMetrics.map(([key, , money]) => (
+                  <td key={key} className="p-3">
+                    {(["basic", "inventory"] as const).map((strategy) => {
+                      const value = point[strategy][key];
+                      return <div key={strategy} className={strategy === "basic" ? "text-blue-400" : "text-amber-400"}>
+                        <span className="sr-only">{strategy === "basic" ? "Basic: " : "Inventory-Aware: "}</span>
+                        {money ? currency(value) : value === null ? "Unavailable" : value.toFixed(2)}
+                      </div>;
+                    })}
+                  </td>
+                ))}
+                <td className="p-3">
+                  <div className="text-blue-400">{point.basic.valid_pnl_count} / {point.basic.unavailable_pnl_count}</div>
+                  <div className="text-amber-400">{point.inventory.valid_pnl_count} / {point.inventory.unavailable_pnl_count}</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        {([
+          ["average_pnl", "Average P&L"],
+          ["pnl_standard_deviation", "P&L Standard Deviation"],
+          ["average_absolute_inventory", "Average Absolute Inventory"],
+          ["average_market_maker_fills", "Average Market Maker Fills"],
+        ] as const).map(([metric, title]) => (
+          <div key={metric}>
+            <h3 className="mb-3 text-lg font-medium">{title} vs {label}</h3>
+            <div className="h-80 rounded-xl bg-gray-900 p-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartPoints.map((point) => ({ value: point.value, basic: point.basic[metric], inventory: point.inventory[metric] }))}>
+                  <XAxis dataKey="value" type="number" domain={["dataMin", "dataMax"]} tickLine={false} tickFormatter={(value: number) => sweepValueLabel(parameter, value)} />
+                  <YAxis domain={["auto", "auto"]} tickLine={false} />
+                  <Tooltip labelFormatter={(value) => `${label}: ${sweepValueLabel(parameter, Number(value))}`} />
+                  <Legend />
+                  <Line type="linear" dataKey="basic" name="Basic" stroke="#60a5fa" dot={{ r: 3 }} strokeWidth={2} connectNulls={false} />
+                  <Line type="linear" dataKey="inventory" name="Inventory-Aware" stroke="#fbbf24" dot={{ r: 3 }} strokeDasharray="6 3" strokeWidth={2} connectNulls={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function currency(value: number | null) {
   return value === null ? "Unavailable" : `$${value.toFixed(2)}`;
 }
@@ -113,6 +219,10 @@ export default function Home() {
   const [startingSeed, setStartingSeed] = useState(42);
   const [numberOfSimulations, setNumberOfSimulations] = useState(10);
   const [experiment, setExperiment] = useState<ExperimentResponse | null>(null);
+  const [sweep, setSweep] = useState<SweepResponse | null>(null);
+  const [sweepParameter, setSweepParameter] = useState<SweepParameter>("volatility");
+  const [sweepValues, setSweepValues] = useState<string>(sweepParameters.volatility.defaults);
+  const [simulationsPerValue, setSimulationsPerValue] = useState(10);
   const [ticks, setTicks] = useState(1000);
   const [volatility, setVolatility] = useState(3);
   const [buyPressure, setBuyPressure] = useState(0.5);
@@ -127,6 +237,21 @@ export default function Home() {
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const sweepTokens = sweepValues.split(",").map((value) => value.trim());
+  const parsedSweepValues = sweepTokens.map(Number);
+  const validSweepValues = sweepTokens.length <= 10 && sweepTokens.every((value) => value !== "") && parsedSweepValues.every((value) => {
+    if (!Number.isFinite(value)) return false;
+    if (sweepParameter === "volatility") return Number.isInteger(value) && value >= 0 && value <= 20;
+    if (sweepParameter === "order_arrival_rate") return Number.isInteger(value) && value >= 1 && value <= 10;
+    if (sweepParameter === "buy_pressure") return value >= 0 && value <= 1;
+    if (sweepParameter === "spread") return value > 0;
+    return value >= 0;
+  });
+  const sweepWorkload = 2 * simulationsPerValue * ticks * parsedSweepValues.reduce((sum, value) => sum + (sweepParameter === "order_arrival_rate" ? value : orderArrivalRate), 0);
+  const sweepError = !validSweepValues
+    ? "Enter 1–10 comma-separated values: volatility integers 0–20; activity integers 1–10; buy pressure 0–1; spread > 0; risk factor >= 0."
+    : sweepWorkload > 1000000 ? "Reduce sweep values, simulations, ticks, or market activity to stay within 1,000,000 external orders." : null;
+
   async function runSimulation() {
     setLoading(true);
     setError(null);
@@ -134,6 +259,7 @@ export default function Home() {
     setHistory(null);
     setComparison(null);
     setExperiment(null);
+    setSweep(null);
 
     try {
       const sharedConfig = {
@@ -171,7 +297,29 @@ export default function Home() {
         return response.json();
       }
 
-      if (mode === "experiment") {
+      if (mode === "sweep") {
+        if (sweepError) throw new Error(sweepError);
+        const response = await fetch("http://localhost:8000/sweeps/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sweep_parameter: sweepParameter,
+            sweep_values: parsedSweepValues,
+            simulations_per_value: simulationsPerValue,
+            starting_seed: startingSeed,
+            ticks,
+            starting_price: startingPrice,
+            volatility,
+            buy_pressure: buyPressure,
+            order_arrival_rate: orderArrivalRate,
+            spread,
+            order_size: orderSize,
+            inventory_risk_factor: riskFactor,
+          }),
+        });
+        if (!response.ok) throw new Error(`Sweep failed (${response.status}). Check the parameter values and workload limits, then try again.`);
+        setSweep(await response.json());
+      } else if (mode === "experiment") {
         const response = await fetch("http://localhost:8000/experiments/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -251,11 +399,13 @@ export default function Home() {
               setHistory(null);
               setComparison(null);
               setExperiment(null);
+              setSweep(null);
               setError(null);
             }} className="w-full rounded-lg bg-gray-900 p-3">
               <option value="single">Single Strategy</option>
               <option value="comparison">Strategy Comparison</option>
               <option value="experiment">Multi-Seed Experiment</option>
+              <option value="sweep">Parameter Sweep</option>
             </select>
           </div>
           {mode === "comparison" && (
@@ -275,6 +425,37 @@ export default function Home() {
               {2 * numberOfSimulations * ticks * orderArrivalRate > 1000000 && (
                 <p role="alert" className="text-red-500">Reduce simulations, ticks, or market activity to stay within the 1,000,000-order limit.</p>
               )}
+            </>
+          )}
+          {mode === "sweep" && (
+            <>
+              <div>
+                <label htmlFor="sweep-parameter" className="mb-2 block">Sweep Parameter</label>
+                <select id="sweep-parameter" value={sweepParameter} onChange={(event) => {
+                  const parameter = event.target.value as SweepParameter;
+                  setSweepParameter(parameter);
+                  setSweepValues(sweepParameters[parameter].defaults);
+                }} className="w-full rounded-lg bg-gray-900 p-3">
+                  {(Object.keys(sweepParameters) as SweepParameter[]).map((parameter) => <option key={parameter} value={parameter}>{sweepParameters[parameter].label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="sweep-values" className="mb-2 block">Sweep Values</label>
+                <input id="sweep-values" type="text" required value={sweepValues} onChange={(event) => setSweepValues(event.target.value)} aria-describedby="sweep-help" className="w-full rounded-lg bg-gray-900 p-3" />
+                <p id="sweep-help" className="mt-2 text-sm text-gray-500">Enter 1–10 comma-separated values. {sweepParameter === "buy_pressure" && "Use fractions: 0.40 means 40%."}</p>
+                {sweepParameter === "buy_pressure" && validSweepValues && <p className="text-sm text-gray-500">{parsedSweepValues.map((value) => sweepValueLabel(sweepParameter, value)).join(", ")}</p>}
+              </div>
+              <div>
+                <label htmlFor="simulations-per-value" className="mb-2 block">Simulations Per Value</label>
+                <input id="simulations-per-value" type="number" required min="1" max="100" step="1" value={simulationsPerValue} onChange={(event) => setSimulationsPerValue(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+              </div>
+              <div>
+                <label htmlFor="sweep-starting-seed" className="mb-2 block">Starting Seed</label>
+                <input id="sweep-starting-seed" type="number" required min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER - simulationsPerValue + 1} step="1" value={startingSeed} onChange={(event) => setStartingSeed(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+              </div>
+              <p className="text-sm text-gray-500">{sweepParameters[sweepParameter].label} is controlled by the sweep; its normal control is disabled. Every point uses the same seed sequence. Limit: 1,000,000 external orders across the whole sweep.</p>
+              {sweepParameter === "inventory_risk_factor" && <p className="text-sm text-gray-500">Basic remains an unchanged baseline at every risk factor; only Inventory-Aware is affected.</p>}
+              {sweepError && <p role="alert" className="text-red-500">{sweepError}</p>}
             </>
           )}
           {mode === "single" && (
@@ -303,7 +484,7 @@ export default function Home() {
             <label htmlFor="starting-price" className="mb-2 block">Starting Price</label>
             <input id="starting-price" type="number" required min="0.01" step="0.01" value={startingPrice} onChange={(event) => setStartingPrice(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
           </div>
-          {mode !== "experiment" && <div>
+          {mode !== "experiment" && mode !== "sweep" && <div>
             <label htmlFor="seed" className="mb-2 block">Random Seed</label>
             <input id="seed" type="number" required step="1" min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER} value={seed} onChange={(event) => setSeed(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
           </div>}
@@ -336,6 +517,7 @@ export default function Home() {
               min="0"
               max="10"
               value={volatility}
+              disabled={mode === "sweep" && sweepParameter === "volatility"}
               onChange={(e) =>
                 setVolatility(Number(e.target.value))
               }
@@ -355,6 +537,7 @@ export default function Home() {
               max="1"
               step="0.05"
               value={buyPressure}
+              disabled={mode === "sweep" && sweepParameter === "buy_pressure"}
               onChange={(e) =>
                 setBuyPressure(Number(e.target.value))
               }
@@ -372,6 +555,7 @@ export default function Home() {
               min="1"
               max="10"
               value={orderArrivalRate}
+              disabled={mode === "sweep" && sweepParameter === "order_arrival_rate"}
               onChange={(e) =>
                 setOrderArrivalRate(Number(e.target.value))
               }
@@ -390,6 +574,7 @@ export default function Home() {
               step="0.01"
               min="0.01"
               value={spread}
+              disabled={mode === "sweep" && sweepParameter === "spread"}
               onChange={(e) =>
                 setSpread(Number(e.target.value))
               }
@@ -426,6 +611,7 @@ export default function Home() {
                 step="0.001"
                 min="0"
                 value={riskFactor}
+                disabled={mode === "sweep" && sweepParameter === "inventory_risk_factor"}
                 onChange={(e) =>
                   setRiskFactor(Number(e.target.value))
                 }
@@ -436,17 +622,19 @@ export default function Home() {
 
           <button
             type="submit"
-            disabled={loading || (mode === "experiment" && 2 * numberOfSimulations * ticks * orderArrivalRate > 1000000)}
+            disabled={loading || (mode === "sweep" && sweepError !== null) || (mode === "experiment" && 2 * numberOfSimulations * ticks * orderArrivalRate > 1000000)}
             className="w-full rounded-lg bg-white p-3 font-semibold text-black disabled:opacity-50"
           >
             {loading
               ? "Running..."
-              : mode === "experiment" ? "Run Experiment" : mode === "comparison" ? "Run Comparison" : "Run Simulation"}
+              : mode === "sweep" ? "Run Sweep" : mode === "experiment" ? "Run Experiment" : mode === "comparison" ? "Run Comparison" : "Run Simulation"}
           </button>
         </fieldset>
       </form>
 
       {error && <p role="alert" className="mt-6 text-red-500">{error}</p>}
+
+      {sweep && <SweepResults sweep={sweep} />}
 
       {experiment && (
         <section className="mt-10 max-w-6xl space-y-6">

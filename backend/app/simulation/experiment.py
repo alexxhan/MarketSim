@@ -21,12 +21,15 @@ def aggregate_results(results):
     }
 
 
-def run_experiment(number_of_simulations, starting_seed, ticks, **market_config):
+def run_experiment(number_of_simulations, starting_seed, ticks, *, basic_inventory_risk_factor=None, **market_config):
     per_seed = []
     for seed in range(starting_seed, starting_seed + number_of_simulations):
         pair = {"seed": seed}
         for strategy in ("basic", "inventory"):
-            engine = SimulationEngine(strategy=strategy, seed=seed, **market_config)
+            strategy_config = dict(market_config)
+            if strategy == "basic" and basic_inventory_risk_factor is not None:
+                strategy_config["inventory_risk_factor"] = basic_inventory_risk_factor
+            engine = SimulationEngine(strategy=strategy, seed=seed, **strategy_config)
             for _ in range(ticks):
                 state = engine.step()
             pair[strategy] = {

@@ -1,9 +1,12 @@
+from typing import Annotated, Literal
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
 from app.simulation.engine import SimulationEngine
 from app.simulation.experiment import run_experiment
+from app.simulation.sweep import run_sweep
 
 
 app = FastAPI(
@@ -51,6 +54,30 @@ class ExperimentRequest(MarketParameters):
             raise ValueError("Experiment exceeds 1,000,000 external orders across both strategies; reduce simulations, ticks, or market activity")
         if self.starting_seed + self.number_of_simulations - 1 > 9007199254740991:
             raise ValueError("Final seed exceeds the maximum safe integer")
+        return self
+
+
+class SweepRequest(MarketParameters):
+    sweep_parameter: Literal["volatility", "buy_pressure", "order_arrival_rate", "spread", "inventory_risk_factor"]
+    sweep_values: list[Annotated[float, Field(strict=True, allow_inf_nan=False)]] = Field(min_length=1, max_length=10)
+    simulations_per_value: int = Field(default=10, ge=1, le=100, strict=True)
+    starting_seed: int = Field(default=42, ge=-9007199254740991, le=9007199254740991, strict=True)
+    ticks: int = Field(default=1000, ge=1, le=5000)
+    order_arrival_rate: int = Field(default=3, ge=1, le=10)
+
+    @model_validator(mode="after")
+    def validate_sweep(self):
+        market_config = self.model_dump(exclude={"sweep_parameter", "sweep_values", "simulations_per_value"})
+        workload = 0
+        for index, value in enumerate(self.sweep_values):
+            point = ExperimentRequest(
+                **{**market_config, self.sweep_parameter: value},
+                number_of_simulations=self.simulations_per_value
+            )
+            workload += 2 * self.simulations_per_value * point.ticks * point.order_arrival_rate
+            self.sweep_values[index] = getattr(point, self.sweep_parameter)
+        if workload > 1_000_000:
+            raise ValueError("Sweep exceeds 1,000,000 external orders across all values and both strategies; reduce values, simulations, ticks, or market activity")
         return self
 
 
@@ -121,4 +148,12 @@ def run_multi_seed_experiment(config: ExperimentRequest):
     return {
         "config": config.model_dump(),
         **run_experiment(**config.model_dump())
+    }
+
+
+@app.post("/sweeps/run")
+def run_parameter_sweep(config: SweepRequest):
+    return {
+        "config": config.model_dump(),
+        **run_sweep(**config.model_dump())
     }
