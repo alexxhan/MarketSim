@@ -6,16 +6,21 @@ class OrderBook:
     def __init__(self):
         self.bids: list[Order] = []
         self.asks: list[Order] = []
+        self._next_arrival_sequence = 0
+        self._arrival_sequences: dict[int, int] = {}
 
 
     def add_order(self, order: Order):
+        self._arrival_sequences[id(order)] = self._next_arrival_sequence
+        self._next_arrival_sequence += 1
+
         if order.side == OrderSide.BUY:
             self.bids.append(order)
 
             self.bids.sort(
                 key=lambda order: (
                     -order.price,
-                    order.timestamp
+                    self._arrival_sequences[id(order)]
                 )
             )
 
@@ -25,7 +30,7 @@ class OrderBook:
             self.asks.sort(
                 key=lambda order: (
                     order.price,
-                    order.timestamp
+                    self._arrival_sequences[id(order)]
                 )
             )
 
@@ -34,11 +39,13 @@ class OrderBook:
         for index, order in enumerate(self.bids):
             if order.order_id == order_id:
                 self.bids.pop(index)
+                del self._arrival_sequences[id(order)]
                 return True
 
         for index, order in enumerate(self.asks):
             if order.order_id == order_id:
                 self.asks.pop(index)
+                del self._arrival_sequences[id(order)]
                 return True
 
         return False
@@ -86,7 +93,10 @@ class OrderBook:
                 best_ask.quantity
             )
 
-            if best_bid.timestamp < best_ask.timestamp:
+            if (
+                self._arrival_sequences[id(best_bid)]
+                < self._arrival_sequences[id(best_ask)]
+            ):
                 trade_price = best_bid.price
             else:
                 trade_price = best_ask.price
@@ -105,8 +115,10 @@ class OrderBook:
 
             if best_bid.quantity == 0:
                 self.bids.pop(0)
+                del self._arrival_sequences[id(best_bid)]
 
             if best_ask.quantity == 0:
                 self.asks.pop(0)
+                del self._arrival_sequences[id(best_ask)]
 
         return trades
