@@ -57,6 +57,12 @@ class SimulationEngine:
 
         self.tick = 0
         self.trades = []
+        self.market_maker_fills = 0
+        self.market_maker_buy_fills = 0
+        self.market_maker_sell_fills = 0
+        self.market_maker_executed_volume = 0
+        self.total_absolute_inventory = 0
+        self.maximum_absolute_inventory = 0
 
     def step(self):
         self.tick += 1
@@ -98,6 +104,15 @@ class SimulationEngine:
 
             for trade in trades:
                 self.market_maker.process_trade(trade)
+                bought = trade.buy_order_id == self.market_maker.active_bid_id
+                sold = trade.sell_order_id == self.market_maker.active_ask_id
+                if bought:
+                    self.market_maker_buy_fills += 1
+                if sold:
+                    self.market_maker_sell_fills += 1
+                if bought or sold:
+                    self.market_maker_fills += 1
+                    self.market_maker_executed_volume += trade.quantity
 
             new_trades.extend(trades)
 
@@ -116,6 +131,13 @@ class SimulationEngine:
             pnl = self.market_maker.portfolio.get_pnl(
                 current_midprice
             )
+
+        absolute_inventory = abs(self.market_maker.portfolio.inventory)
+        self.total_absolute_inventory += absolute_inventory
+        self.maximum_absolute_inventory = max(
+            self.maximum_absolute_inventory,
+            absolute_inventory
+        )
 
         return {
             "tick": self.tick,
@@ -139,5 +161,19 @@ class SimulationEngine:
             "cash": self.market_maker.portfolio.cash,
             "inventory": self.market_maker.portfolio.inventory,
             "portfolio_value": portfolio_value,
-            "pnl": pnl
+            "pnl": pnl,
+            "metrics": {
+                "total_market_trades": len(self.trades),
+                "market_maker_fills": self.market_maker_fills,
+                "market_maker_buy_fills": self.market_maker_buy_fills,
+                "market_maker_sell_fills": self.market_maker_sell_fills,
+                "market_maker_executed_volume": self.market_maker_executed_volume,
+                "average_absolute_inventory": self.total_absolute_inventory / self.tick,
+                "maximum_absolute_inventory": self.maximum_absolute_inventory,
+                "pnl_per_fill": (
+                    pnl / self.market_maker_fills
+                    if pnl is not None and self.market_maker_fills > 0
+                    else None
+                )
+            }
         }

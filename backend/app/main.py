@@ -80,6 +80,7 @@ def run_simulation(config: SimulationRequest):
     return {
         "config": config.model_dump(),
         "results": {
+            **state["metrics"],
             "ticks": config.ticks,
             "total_trades": len(engine.trades),
             "final_cash": state["cash"],

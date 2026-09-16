@@ -14,6 +14,14 @@ import {
 type SimulationResults = {
   ticks: number;
   total_trades: number;
+  total_market_trades: number;
+  market_maker_fills: number;
+  market_maker_buy_fills: number;
+  market_maker_sell_fills: number;
+  market_maker_executed_volume: number;
+  average_absolute_inventory: number;
+  maximum_absolute_inventory: number;
+  pnl_per_fill: number | null;
   final_cash: number;
   final_inventory: number;
   final_portfolio_value: number | null;
@@ -37,6 +45,21 @@ type Comparison = {
   inventory: SimulationResponse;
   seed: number;
 };
+
+function MarketMakerMetrics({ results }: { results: SimulationResults }) {
+  return (
+    <>
+      <p>Total Market Trades: {results.total_market_trades}</p>
+      <p>Market Maker Fills: {results.market_maker_fills}</p>
+      <p>Market Maker Buy Fills: {results.market_maker_buy_fills}</p>
+      <p>Market Maker Sell Fills: {results.market_maker_sell_fills}</p>
+      <p>Market Maker Executed Volume: {results.market_maker_executed_volume}</p>
+      <p>Average Absolute Inventory: {results.average_absolute_inventory.toFixed(2)}</p>
+      <p>Maximum Absolute Inventory: {results.maximum_absolute_inventory}</p>
+      <p>P&amp;L per Fill: {results.pnl_per_fill === null ? "Unavailable" : `$${results.pnl_per_fill.toFixed(2)}`}</p>
+    </>
+  );
+}
 
 export default function Home() {
   const [mode, setMode] = useState("single");
@@ -352,7 +375,7 @@ export default function Home() {
                   </h3>
                   <p>Final P&amp;L: {result.final_pnl === null ? "Unavailable" : `$${result.final_pnl.toFixed(2)}`}</p>
                   <p>Final Inventory: {result.final_inventory}</p>
-                  <p>Total Trades: {result.total_trades}</p>
+                  <MarketMakerMetrics results={result} />
                   <p>Final Portfolio Value: {result.final_portfolio_value === null ? "Unavailable" : `$${result.final_portfolio_value.toFixed(2)}`}</p>
                 </div>
               );
@@ -398,9 +421,7 @@ export default function Home() {
             Ticks: {results.ticks}
           </p>
 
-          <p>
-            Trades: {results.total_trades}
-          </p>
+          <MarketMakerMetrics results={results} />
 
           <p>
             Cash: ${results.final_cash.toFixed(2)}
