@@ -46,18 +46,62 @@ type Comparison = {
   seed: number;
 };
 
-function MarketMakerMetrics({ results }: { results: SimulationResults }) {
+type ExperimentAggregate = {
+  valid_pnl_count: number;
+  unavailable_pnl_count: number;
+  average_pnl: number | null;
+  pnl_standard_deviation: number | null;
+  best_pnl: number | null;
+  worst_pnl: number | null;
+  average_final_inventory: number;
+  average_absolute_inventory: number;
+  average_maximum_absolute_inventory: number;
+  worst_maximum_absolute_inventory: number;
+  average_market_maker_fills: number;
+  average_market_maker_executed_volume: number;
+};
+
+type ExperimentSeedResult = {
+  final_pnl: number | null;
+  maximum_absolute_inventory: number;
+};
+
+type ExperimentResponse = {
+  config: { number_of_simulations: number; starting_seed: number; ticks: number };
+  per_seed: { seed: number; basic: ExperimentSeedResult; inventory: ExperimentSeedResult }[];
+  aggregates: { basic: ExperimentAggregate; inventory: ExperimentAggregate };
+};
+
+function currency(value: number | null) {
+  return value === null ? "Unavailable" : `$${value.toFixed(2)}`;
+}
+
+function SimulationMetrics({ results }: { results: SimulationResults }) {
   return (
-    <>
-      <p>Total Market Trades: {results.total_market_trades}</p>
-      <p>Market Maker Fills: {results.market_maker_fills}</p>
-      <p>Market Maker Buy Fills: {results.market_maker_buy_fills}</p>
-      <p>Market Maker Sell Fills: {results.market_maker_sell_fills}</p>
-      <p>Market Maker Executed Volume: {results.market_maker_executed_volume}</p>
-      <p>Average Absolute Inventory: {results.average_absolute_inventory.toFixed(2)}</p>
-      <p>Maximum Absolute Inventory: {results.maximum_absolute_inventory}</p>
-      <p>P&amp;L per Fill: {results.pnl_per_fill === null ? "Unavailable" : `$${results.pnl_per_fill.toFixed(2)}`}</p>
-    </>
+    <div className="space-y-5">
+      <section className="space-y-2">
+        <h4 className="text-sm font-semibold uppercase text-gray-400">Performance</h4>
+        <p>Final P&amp;L: {currency(results.final_pnl)}</p>
+        <p>Final Portfolio Value: {currency(results.final_portfolio_value)}</p>
+        <p>Cash: {currency(results.final_cash)}</p>
+        <p>P&amp;L per Fill: {currency(results.pnl_per_fill)}</p>
+        <p>Midprice: {currency(results.final_midprice)}</p>
+      </section>
+      <section className="space-y-2">
+        <h4 className="text-sm font-semibold uppercase text-gray-400">Execution</h4>
+        <p>Total Market Trades: {results.total_market_trades}</p>
+        <p>Market Maker Fills: {results.market_maker_fills}</p>
+        <p>Market Maker Buy Fills: {results.market_maker_buy_fills}</p>
+        <p>Market Maker Sell Fills: {results.market_maker_sell_fills}</p>
+        <p>Market Maker Executed Volume: {results.market_maker_executed_volume}</p>
+      </section>
+      <section className="space-y-2">
+        <h4 className="text-sm font-semibold uppercase text-gray-400">Inventory Risk</h4>
+        <p>Final Inventory: {results.final_inventory}</p>
+        <p>Average Absolute Inventory: {results.average_absolute_inventory.toFixed(2)}</p>
+        <p>Maximum Absolute Inventory: {results.maximum_absolute_inventory}</p>
+      </section>
+    </div>
   );
 }
 
@@ -66,6 +110,9 @@ export default function Home() {
   const [strategy, setStrategy] = useState("inventory");
   const [startingPrice, setStartingPrice] = useState(100);
   const [seed, setSeed] = useState(42);
+  const [startingSeed, setStartingSeed] = useState(42);
+  const [numberOfSimulations, setNumberOfSimulations] = useState(10);
+  const [experiment, setExperiment] = useState<ExperimentResponse | null>(null);
   const [ticks, setTicks] = useState(1000);
   const [volatility, setVolatility] = useState(3);
   const [buyPressure, setBuyPressure] = useState(0.5);
@@ -86,6 +133,7 @@ export default function Home() {
     setResults(null);
     setHistory(null);
     setComparison(null);
+    setExperiment(null);
 
     try {
       const sharedConfig = {
@@ -123,7 +171,28 @@ export default function Home() {
         return response.json();
       }
 
-      if (mode === "comparison") {
+      if (mode === "experiment") {
+        const response = await fetch("http://localhost:8000/experiments/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticks,
+            starting_price: startingPrice,
+            volatility,
+            buy_pressure: buyPressure,
+            order_arrival_rate: orderArrivalRate,
+            spread,
+            order_size: orderSize,
+            inventory_risk_factor: riskFactor,
+            number_of_simulations: numberOfSimulations,
+            starting_seed: startingSeed,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`Experiment failed (${response.status}). Check the parameters and experiment limits, then try again.`);
+        }
+        setExperiment(await response.json());
+      } else if (mode === "comparison") {
         const [basic, inventory] = await Promise.all([
           runStrategy("basic"),
           runStrategy("inventory"),
@@ -181,14 +250,32 @@ export default function Home() {
               setResults(null);
               setHistory(null);
               setComparison(null);
+              setExperiment(null);
               setError(null);
             }} className="w-full rounded-lg bg-gray-900 p-3">
               <option value="single">Single Strategy</option>
               <option value="comparison">Strategy Comparison</option>
+              <option value="experiment">Multi-Seed Experiment</option>
             </select>
           </div>
           {mode === "comparison" && (
             <p className="text-sm text-gray-500">Compare both strategies with the same parameters and seeded external order flow. Inventory risk applies only to Inventory-Aware.</p>
+          )}
+          {mode === "experiment" && (
+            <>
+              <p className="text-sm text-gray-500">Run both strategies for each consecutive seed. Limits: 1–100 seed pairs and 1,000,000 external orders across both strategies. Inventory risk applies only to Inventory-Aware.</p>
+              <div>
+                <label htmlFor="simulation-count" className="mb-2 block">Number of Simulations</label>
+                <input id="simulation-count" type="number" required min="1" max="100" step="1" value={numberOfSimulations} onChange={(event) => setNumberOfSimulations(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+              </div>
+              <div>
+                <label htmlFor="starting-seed" className="mb-2 block">Starting Seed</label>
+                <input id="starting-seed" type="number" required min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER - numberOfSimulations + 1} step="1" value={startingSeed} onChange={(event) => setStartingSeed(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+              </div>
+              {2 * numberOfSimulations * ticks * orderArrivalRate > 1000000 && (
+                <p role="alert" className="text-red-500">Reduce simulations, ticks, or market activity to stay within the 1,000,000-order limit.</p>
+              )}
+            </>
           )}
           {mode === "single" && (
             <div>
@@ -216,10 +303,10 @@ export default function Home() {
             <label htmlFor="starting-price" className="mb-2 block">Starting Price</label>
             <input id="starting-price" type="number" required min="0.01" step="0.01" value={startingPrice} onChange={(event) => setStartingPrice(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
           </div>
-          <div>
+          {mode !== "experiment" && <div>
             <label htmlFor="seed" className="mb-2 block">Random Seed</label>
             <input id="seed" type="number" required step="1" min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER} value={seed} onChange={(event) => setSeed(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
-          </div>
+          </div>}
 
           <div>
             <label className="mb-2 block">
@@ -327,7 +414,7 @@ export default function Home() {
             />
           </div>
 
-          {(mode === "comparison" || strategy === "inventory") && (
+          {(mode !== "single" || strategy === "inventory") && (
             <div>
               <label className="mb-2 block">
                 Inventory Risk Factor
@@ -349,17 +436,87 @@ export default function Home() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (mode === "experiment" && 2 * numberOfSimulations * ticks * orderArrivalRate > 1000000)}
             className="w-full rounded-lg bg-white p-3 font-semibold text-black disabled:opacity-50"
           >
             {loading
               ? "Running..."
-              : mode === "comparison" ? "Run Comparison" : "Run Simulation"}
+              : mode === "experiment" ? "Run Experiment" : mode === "comparison" ? "Run Comparison" : "Run Simulation"}
           </button>
         </fieldset>
       </form>
 
       {error && <p role="alert" className="mt-6 text-red-500">{error}</p>}
+
+      {experiment && (
+        <section className="mt-10 max-w-6xl space-y-6">
+          <h2 className="text-2xl font-semibold">Multi-Seed Experiment Results</h2>
+          <p className="text-sm text-gray-500">
+            {experiment.config.number_of_simulations} simulations per strategy, {experiment.config.ticks} ticks each.
+            Seeds {experiment.config.starting_seed} through {experiment.per_seed[experiment.per_seed.length - 1].seed}.
+            P&amp;L statistics use available values only, separately for each strategy, with population standard deviation.
+            Inventory and execution statistics include every seed. Gaps indicate unavailable P&amp;L.
+          </p>
+          <div className="grid gap-6 md:grid-cols-2">
+            {(["basic", "inventory"] as const).map((key) => {
+              const aggregate = experiment.aggregates[key];
+              return (
+                <div key={key} className="space-y-5 rounded-xl bg-gray-900 p-5 text-gray-100">
+                  <h3 className={`text-lg font-semibold ${key === "basic" ? "text-blue-400" : "text-amber-400"}`}>
+                    {key === "basic" ? "Basic Market Maker" : "Inventory-Aware Market Maker"}
+                  </h3>
+                  <section className="space-y-2">
+                    <h4 className="text-sm font-semibold uppercase text-gray-400">Performance</h4>
+                    <p>Average P&amp;L: {currency(aggregate.average_pnl)}</p>
+                    <p>P&amp;L Standard Deviation: {currency(aggregate.pnl_standard_deviation)}</p>
+                    <p>Best P&amp;L: {currency(aggregate.best_pnl)}</p>
+                    <p>Worst P&amp;L: {currency(aggregate.worst_pnl)}</p>
+                    <p className="text-sm text-gray-400">Available P&amp;L: {aggregate.valid_pnl_count}; unavailable: {aggregate.unavailable_pnl_count}</p>
+                  </section>
+                  <section className="space-y-2">
+                    <h4 className="text-sm font-semibold uppercase text-gray-400">Inventory Risk</h4>
+                    <p>Average Final Inventory: {aggregate.average_final_inventory.toFixed(2)}</p>
+                    <p>Average Absolute Inventory: {aggregate.average_absolute_inventory.toFixed(2)}</p>
+                    <p>Average Maximum Absolute Inventory: {aggregate.average_maximum_absolute_inventory.toFixed(2)}</p>
+                    <p>Worst Maximum Absolute Inventory: {aggregate.worst_maximum_absolute_inventory}</p>
+                  </section>
+                  <section className="space-y-2">
+                    <h4 className="text-sm font-semibold uppercase text-gray-400">Execution</h4>
+                    <p>Average MM Fills: {aggregate.average_market_maker_fills.toFixed(2)}</p>
+                    <p>Average Executed Volume: {aggregate.average_market_maker_executed_volume.toFixed(2)}</p>
+                  </section>
+                </div>
+              );
+            })}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            {([
+              ["final_pnl", "P&L by Seed"],
+              ["maximum_absolute_inventory", "Maximum Absolute Inventory by Seed"],
+            ] as const).map(([metric, title]) => (
+              <div key={metric}>
+                <h3 className="mb-3 text-lg font-medium">{title}</h3>
+                <div className="h-80 rounded-xl bg-gray-900 p-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={experiment.per_seed.map((pair) => ({
+                      seed: pair.seed,
+                      basic: pair.basic[metric],
+                      inventory: pair.inventory[metric],
+                    }))}>
+                      <XAxis dataKey="seed" tickLine={false} />
+                      <YAxis domain={["auto", "auto"]} tickLine={false} />
+                      <Tooltip labelFormatter={(seed) => `Seed ${seed}`} />
+                      <Legend />
+                      <Line type="linear" dataKey="basic" name="Basic" stroke="#60a5fa" dot={{ r: 3 }} strokeWidth={2} connectNulls={false} />
+                      <Line type="linear" dataKey="inventory" name="Inventory-Aware" stroke="#fbbf24" dot={{ r: 3 }} strokeDasharray="6 3" strokeWidth={2} connectNulls={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {comparison && (
         <section className="mt-10 max-w-6xl space-y-6">
@@ -373,10 +530,7 @@ export default function Home() {
                   <h3 className={`text-lg font-semibold ${key === "basic" ? "text-blue-400" : "text-amber-400"}`}>
                     {key === "basic" ? "Basic Market Maker" : "Inventory-Aware Market Maker"}
                   </h3>
-                  <p>Final P&amp;L: {result.final_pnl === null ? "Unavailable" : `$${result.final_pnl.toFixed(2)}`}</p>
-                  <p>Final Inventory: {result.final_inventory}</p>
-                  <MarketMakerMetrics results={result} />
-                  <p>Final Portfolio Value: {result.final_portfolio_value === null ? "Unavailable" : `$${result.final_portfolio_value.toFixed(2)}`}</p>
+                  <SimulationMetrics results={result} />
                 </div>
               );
             })}
@@ -421,36 +575,9 @@ export default function Home() {
             Ticks: {results.ticks}
           </p>
 
-          <MarketMakerMetrics results={results} />
-
-          <p>
-            Cash: ${results.final_cash.toFixed(2)}
-          </p>
-
-          <p>
-            Inventory: {results.final_inventory}
-          </p>
-
-          <p>
-            Portfolio Value:{" "}
-            {results.final_portfolio_value !== null
-              ? `$${results.final_portfolio_value.toFixed(2)}`
-              : "Unavailable"}
-          </p>
-
-          <p>
-            P&L:{" "}
-            {results.final_pnl !== null
-              ? `$${results.final_pnl.toFixed(2)}`
-              : "Unavailable"}
-          </p>
-
-          <p>
-            Midprice:{" "}
-            {results.final_midprice !== null
-              ? `$${results.final_midprice.toFixed(2)}`
-              : "Unavailable"}
-          </p>
+          <div className="max-w-md rounded-xl bg-gray-900 p-5 text-gray-100">
+            <SimulationMetrics results={results} />
+          </div>
         </div>
       )}
 

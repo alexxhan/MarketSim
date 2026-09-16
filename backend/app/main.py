@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.simulation.engine import SimulationEngine
+from app.simulation.experiment import run_experiment
 
 
 app = FastAPI(
@@ -22,8 +23,7 @@ app.add_middleware(
 )
 
 
-class SimulationRequest(BaseModel):
-    strategy: str = "inventory"
+class MarketParameters(BaseModel):
     ticks: int = Field(default=1000, ge=1, le=100000)
     starting_price: float = Field(default=100.0, gt=0)
     volatility: int = Field(default=1, ge=0, le=20)
@@ -32,7 +32,26 @@ class SimulationRequest(BaseModel):
     spread: float = Field(default=0.04, gt=0)
     order_size: int = Field(default=10, ge=1)
     inventory_risk_factor: float = Field(default=0.001, ge=0)
+
+
+class SimulationRequest(MarketParameters):
+    strategy: str = "inventory"
     seed: int | None = None
+
+
+class ExperimentRequest(MarketParameters):
+    number_of_simulations: int = Field(default=10, ge=1, le=100, strict=True)
+    starting_seed: int = Field(default=42, ge=-9007199254740991, le=9007199254740991, strict=True)
+    ticks: int = Field(default=1000, ge=1, le=5000)
+    order_arrival_rate: int = Field(default=3, ge=1, le=10)
+
+    @model_validator(mode="after")
+    def validate_workload(self):
+        if 2 * self.number_of_simulations * self.ticks * self.order_arrival_rate > 1_000_000:
+            raise ValueError("Experiment exceeds 1,000,000 external orders across both strategies; reduce simulations, ticks, or market activity")
+        if self.starting_seed + self.number_of_simulations - 1 > 9007199254740991:
+            raise ValueError("Final seed exceeds the maximum safe integer")
+        return self
 
 
 @app.get("/")
@@ -94,4 +113,12 @@ def run_simulation(config: SimulationRequest):
             "inventory": inventory_history,
             "midprice": midprice_history
         }
+    }
+
+
+@app.post("/experiments/run")
+def run_multi_seed_experiment(config: ExperimentRequest):
+    return {
+        "config": config.model_dump(),
+        **run_experiment(**config.model_dump())
     }
