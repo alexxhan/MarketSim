@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { scenarioPresets, type Regime } from "./scenarios";
 import {
   LineChart,
   Line,
@@ -8,6 +9,7 @@ import {
   YAxis,
   Tooltip,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
 
@@ -71,6 +73,69 @@ type ExperimentResponse = {
   per_seed: { seed: number; basic: ExperimentSeedResult; inventory: ExperimentSeedResult }[];
   aggregates: { basic: ExperimentAggregate; inventory: ExperimentAggregate };
 };
+
+type ScenarioResponse = {
+  config: { regimes: Regime[]; seed: number; strategy: string };
+  total_ticks: number;
+  regime_boundaries: { regime_id: number; name: string; start_tick: number; end_tick: number }[];
+  runs: Partial<Record<"basic" | "inventory", {
+    results: SimulationResults;
+    history: SimulationHistory & { regime_id: number[]; regime_name: string[] };
+  }>>;
+};
+
+function ScenarioResults({ scenario }: { scenario: ScenarioResponse }) {
+  const strategies = (["basic", "inventory"] as const).filter((key) => scenario.runs[key]);
+  return (
+    <section className="mt-10 max-w-6xl space-y-6">
+      <h2 className="text-2xl font-semibold">Scenario Stress Test Results</h2>
+      <p className="text-sm text-gray-500">{scenario.total_ticks} ticks · Seed: {scenario.config.seed}. Market price is each strategy’s order-book midprice.</p>
+      <p>{scenario.regime_boundaries.map((regime) => `${regime.name} (ticks ${regime.start_tick}–${regime.end_tick})`).join(" | ")}</p>
+      <div className="grid gap-6 md:grid-cols-2">
+        {strategies.map((key) => (
+          <div key={key} className="space-y-5 rounded-xl bg-gray-900 p-5 text-gray-100">
+            <h3 className={`text-lg font-semibold ${key === "basic" ? "text-blue-400" : "text-amber-400"}`}>{key === "basic" ? "Basic Market Maker" : "Inventory-Aware Market Maker"}</h3>
+            <SimulationMetrics results={scenario.runs[key]!.results} />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        {([
+          ["pnl", "P&L Through Scenario"],
+          ["inventory", "Inventory Through Scenario"],
+          ["midprice", "Market Price Through Scenario"],
+        ] as const).map(([metric, title]) => (
+          <div key={metric} className={metric === "midprice" ? "lg:col-span-2" : ""}>
+            <h3 className="mb-3 text-lg font-medium">{title}</h3>
+            <div className="h-80 rounded-xl bg-gray-900 p-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart margin={{ top: 25, right: 20 }} data={Array.from({ length: scenario.total_ticks }, (_, index) => ({
+                  tick: index + 1,
+                  basic: scenario.runs.basic?.history[metric][index],
+                  inventory: scenario.runs.inventory?.history[metric][index],
+                }))}>
+                  <XAxis dataKey="tick" type="number" domain={[1, scenario.total_ticks]} tickLine={false} />
+                  <YAxis domain={["auto", "auto"]} tickLine={false} />
+                  <Tooltip labelFormatter={(tick) => {
+                    const regime = scenario.regime_boundaries.find((item) => Number(tick) >= item.start_tick && Number(tick) <= item.end_tick);
+                    return `Tick ${tick} · ${regime?.name ?? ""}`;
+                  }} />
+                  <Legend />
+                  {scenario.regime_boundaries.slice(1).map((regime) => (
+                    <ReferenceLine key={regime.regime_id} x={regime.start_tick} stroke="#9ca3af" strokeDasharray="4 4" label={{ value: `${regime.name} (${regime.start_tick})`, position: "top", fill: "#9ca3af", fontSize: 11 }} />
+                  ))}
+                  {strategies.map((key) => (
+                    <Line key={key} type="linear" dataKey={key} name={key === "basic" ? "Basic" : "Inventory-Aware"} stroke={key === "basic" ? "#60a5fa" : "#fbbf24"} strokeDasharray={key === "basic" ? undefined : "6 3"} dot={false} strokeWidth={2} connectNulls={false} />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 const sweepParameters = {
   volatility: { label: "Volatility", defaults: "1, 2, 3, 4, 5" },
@@ -213,6 +278,9 @@ function SimulationMetrics({ results }: { results: SimulationResults }) {
 
 export default function Home() {
   const [mode, setMode] = useState("single");
+  const [scenarioIndex, setScenarioIndex] = useState(0);
+  const [scenarioStrategy, setScenarioStrategy] = useState("comparison");
+  const [scenario, setScenario] = useState<ScenarioResponse | null>(null);
   const [strategy, setStrategy] = useState("inventory");
   const [startingPrice, setStartingPrice] = useState(100);
   const [seed, setSeed] = useState(42);
@@ -260,6 +328,7 @@ export default function Home() {
     setComparison(null);
     setExperiment(null);
     setSweep(null);
+    setScenario(null);
 
     try {
       const sharedConfig = {
@@ -297,7 +366,23 @@ export default function Home() {
         return response.json();
       }
 
-      if (mode === "sweep") {
+      if (mode === "scenario") {
+        const response = await fetch("http://localhost:8000/scenarios/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            regimes: scenarioPresets[scenarioIndex].regimes,
+            strategy: scenarioStrategy,
+            starting_price: startingPrice,
+            seed,
+            spread,
+            order_size: orderSize,
+            inventory_risk_factor: riskFactor,
+          }),
+        });
+        if (!response.ok) throw new Error(`Scenario failed (${response.status}). Check the parameters and try again.`);
+        setScenario(await response.json());
+      } else if (mode === "sweep") {
         if (sweepError) throw new Error(sweepError);
         const response = await fetch("http://localhost:8000/sweeps/run", {
           method: "POST",
@@ -400,12 +485,14 @@ export default function Home() {
               setComparison(null);
               setExperiment(null);
               setSweep(null);
+              setScenario(null);
               setError(null);
             }} className="w-full rounded-lg bg-gray-900 p-3">
               <option value="single">Single Strategy</option>
               <option value="comparison">Strategy Comparison</option>
               <option value="experiment">Multi-Seed Experiment</option>
               <option value="sweep">Parameter Sweep</option>
+              <option value="scenario">Scenario Stress Test</option>
             </select>
           </div>
           {mode === "comparison" && (
@@ -479,6 +566,32 @@ export default function Home() {
               </select>
             </div>
           )}
+          {mode === "scenario" && (
+            <>
+              <div>
+                <label htmlFor="scenario" className="mb-2 block">Scenario</label>
+                <select id="scenario" value={scenarioIndex} onChange={(event) => setScenarioIndex(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3">
+                  {scenarioPresets.map((preset, index) => <option key={preset.name} value={index}>{preset.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="scenario-strategy" className="mb-2 block">Strategy or Comparison</label>
+                <select id="scenario-strategy" value={scenarioStrategy} onChange={(event) => setScenarioStrategy(event.target.value)} className="w-full rounded-lg bg-gray-900 p-3">
+                  <option value="comparison">Paired Comparison</option>
+                  <option value="basic">Basic Market Maker</option>
+                  <option value="inventory">Inventory-Aware Market Maker</option>
+                </select>
+              </div>
+              <div className="space-y-3 text-sm">
+                <p>{scenarioPresets[scenarioIndex].regimes.map((regime) => regime.name).join(" → ")}</p>
+                {scenarioPresets[scenarioIndex].regimes.map((regime, index, regimes) => {
+                  const start = 1 + regimes.slice(0, index).reduce((sum, item) => sum + item.duration_ticks, 0);
+                  return <p key={index} className="text-gray-500">{regime.name}: ticks {start}–{start + regime.duration_ticks - 1}; volatility {regime.volatility}; buy pressure {(regime.buy_pressure * 100).toFixed(0)}%; {regime.order_arrival_rate} orders/tick.</p>;
+                })}
+                <p className="text-gray-500">The seeded market process continues across regimes. Inventory risk applies only to Inventory-Aware.</p>
+              </div>
+            </>
+          )}
 
           <div>
             <label htmlFor="starting-price" className="mb-2 block">Starting Price</label>
@@ -489,6 +602,7 @@ export default function Home() {
             <input id="seed" type="number" required step="1" min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER} value={seed} onChange={(event) => setSeed(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
           </div>}
 
+          {mode !== "scenario" && <>
           <div>
             <label className="mb-2 block">
               Ticks: {ticks}
@@ -563,6 +677,8 @@ export default function Home() {
             />
           </div>
 
+          </>}
+
           <div>
             <label className="mb-2 block">
               Spread
@@ -627,12 +743,14 @@ export default function Home() {
           >
             {loading
               ? "Running..."
-              : mode === "sweep" ? "Run Sweep" : mode === "experiment" ? "Run Experiment" : mode === "comparison" ? "Run Comparison" : "Run Simulation"}
+              : mode === "scenario" ? "Run Scenario" : mode === "sweep" ? "Run Sweep" : mode === "experiment" ? "Run Experiment" : mode === "comparison" ? "Run Comparison" : "Run Simulation"}
           </button>
         </fieldset>
       </form>
 
       {error && <p role="alert" className="mt-6 text-red-500">{error}</p>}
+
+      {scenario && <ScenarioResults scenario={scenario} />}
 
       {sweep && <SweepResults sweep={sweep} />}
 

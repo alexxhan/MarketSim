@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.simulation.engine import SimulationEngine
 from app.simulation.experiment import run_experiment
 from app.simulation.sweep import run_sweep
+from app.simulation.scenario import Regime, run_scenario
 
 
 app = FastAPI(
@@ -78,6 +79,22 @@ class SweepRequest(MarketParameters):
             self.sweep_values[index] = getattr(point, self.sweep_parameter)
         if workload > 1_000_000:
             raise ValueError("Sweep exceeds 1,000,000 external orders across all values and both strategies; reduce values, simulations, ticks, or market activity")
+        return self
+
+
+class ScenarioRequest(BaseModel):
+    regimes: list[Regime] = Field(min_length=1, max_length=10)
+    strategy: Literal["basic", "inventory", "comparison"] = "comparison"
+    starting_price: float = Field(default=100.0, gt=0, allow_inf_nan=False)
+    seed: int = Field(default=42, ge=-9007199254740991, le=9007199254740991, strict=True)
+    spread: float = Field(default=0.04, gt=0, allow_inf_nan=False)
+    order_size: int = Field(default=10, ge=1, strict=True)
+    inventory_risk_factor: float = Field(default=0.001, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_duration(self):
+        if sum(regime.duration_ticks for regime in self.regimes) > 5000:
+            raise ValueError("Scenario must not exceed 5,000 total ticks")
         return self
 
 
@@ -157,3 +174,8 @@ def run_parameter_sweep(config: SweepRequest):
         "config": config.model_dump(),
         **run_sweep(**config.model_dump())
     }
+
+
+@app.post("/scenarios/run")
+def run_market_scenario(config: ScenarioRequest):
+    return {"config": config.model_dump(), **run_scenario(**config.model_dump())}
