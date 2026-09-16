@@ -87,13 +87,13 @@ type ScenarioResponse = {
 function ScenarioResults({ scenario }: { scenario: ScenarioResponse }) {
   const strategies = (["basic", "inventory"] as const).filter((key) => scenario.runs[key]);
   return (
-    <section className="mt-10 max-w-6xl space-y-6">
+    <section className="space-y-6">
       <h2 className="text-2xl font-semibold">Scenario Stress Test Results</h2>
       <p className="text-sm text-gray-500">{scenario.total_ticks} ticks · Seed: {scenario.config.seed}. Market price is each strategy’s order-book midprice.</p>
       <p>{scenario.regime_boundaries.map((regime) => `${regime.name} (ticks ${regime.start_tick}–${regime.end_tick})`).join(" | ")}</p>
       <div className="grid gap-6 md:grid-cols-2">
         {strategies.map((key) => (
-          <div key={key} className="space-y-5 rounded-xl bg-gray-900 p-5 text-gray-100">
+          <div key={key} className="space-y-5 rounded-2xl border border-white/10 bg-[#0e1219] p-5 text-gray-100">
             <h3 className={`text-lg font-semibold ${key === "basic" ? "text-blue-400" : "text-amber-400"}`}>{key === "basic" ? "Basic Market Maker" : "Inventory-Aware Market Maker"}</h3>
             <SimulationMetrics results={scenario.runs[key]!.results} />
           </div>
@@ -107,7 +107,7 @@ function ScenarioResults({ scenario }: { scenario: ScenarioResponse }) {
         ] as const).map(([metric, title]) => (
           <div key={metric} className={metric === "midprice" ? "lg:col-span-2" : ""}>
             <h3 className="mb-3 text-lg font-medium">{title}</h3>
-            <div className="h-80 rounded-xl bg-gray-900 p-4">
+            <div className="h-80 rounded-2xl border border-white/10 bg-[#0e1219] p-4">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart margin={{ top: 25, right: 20 }} data={Array.from({ length: scenario.total_ticks }, (_, index) => ({
                   tick: index + 1,
@@ -173,7 +173,7 @@ function SweepResults({ sweep }: { sweep: SweepResponse }) {
   const label = sweepParameters[parameter].label;
   const chartPoints = [...sweep.results].sort((a, b) => a.value - b.value);
   return (
-    <section className="mt-10 max-w-6xl space-y-6">
+    <section className="space-y-6">
       <h2 className="text-2xl font-semibold">Parameter Sweep Results: {label}</h2>
       <p className="text-sm text-gray-500">
         {sweep.config.simulations_per_value} seed pairs per value, {sweep.config.ticks} ticks each.
@@ -181,7 +181,7 @@ function SweepResults({ sweep }: { sweep: SweepResponse }) {
         P&amp;L statistics exclude unavailable values and use population standard deviation. Chart gaps indicate unavailable P&amp;L.
       </p>
       {parameter === "inventory_risk_factor" && <p className="text-sm text-gray-500">Basic is an unchanged baseline at every risk factor. Only Inventory-Aware is affected.</p>}
-      <div className="overflow-x-auto rounded-xl bg-gray-900 p-4 text-gray-100">
+      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0e1219] p-4 text-gray-100">
         <table className="w-full text-left text-sm">
           <caption className="mb-3 text-left text-gray-400">Each cell shows Basic (blue) followed by Inventory-Aware (amber).</caption>
           <thead>
@@ -224,7 +224,7 @@ function SweepResults({ sweep }: { sweep: SweepResponse }) {
         ] as const).map(([metric, title]) => (
           <div key={metric}>
             <h3 className="mb-3 text-lg font-medium">{title} vs {label}</h3>
-            <div className="h-80 rounded-xl bg-gray-900 p-4">
+            <div className="h-80 rounded-2xl border border-white/10 bg-[#0e1219] p-4">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartPoints.map((point) => ({ value: point.value, basic: point.basic[metric], inventory: point.inventory[metric] }))}>
                   <XAxis dataKey="value" type="number" domain={["dataMin", "dataMax"]} tickLine={false} tickFormatter={(value: number) => sweepValueLabel(parameter, value)} />
@@ -464,37 +464,73 @@ export default function Home() {
       }))
     : [];
 
+  const modes = [
+    ["single", "Single Strategy", "Run one market maker"],
+    ["comparison", "Strategy Comparison", "Compare both strategies"],
+    ["experiment", "Multi-Seed Experiment", "Test many market paths"],
+    ["sweep", "Parameter Sweep", "Stress-test a parameter"],
+    ["scenario", "Scenario Stress Test", "Run changing regimes"],
+  ] as const;
+
+  const changeMode = (nextMode: string) => {
+    setMode(nextMode);
+    setResults(null);
+    setHistory(null);
+    setComparison(null);
+    setExperiment(null);
+    setSweep(null);
+    setScenario(null);
+    setError(null);
+  };
+
   return (
-    <main className="min-h-screen p-10">
-      <h1 className="text-4xl font-bold">
-        MarketSim
-      </h1>
-
-      <p className="mt-2 text-gray-500">
-        Market Making Simulator
-      </p>
-
-      <form onSubmit={(event) => { event.preventDefault(); void runSimulation(); }} className="mt-10 max-w-md">
-        <fieldset disabled={loading} className="space-y-5">
+    <main className="min-h-screen bg-[#07090d] text-gray-100">
+      <header className="border-b border-white/10 bg-[#0a0d12] px-5 py-5 lg:px-8">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
           <div>
-            <label htmlFor="mode" className="mb-2 block">Mode</label>
-            <select id="mode" value={mode} onChange={(event) => {
-              setMode(event.target.value);
-              setResults(null);
-              setHistory(null);
-              setComparison(null);
-              setExperiment(null);
-              setSweep(null);
-              setScenario(null);
-              setError(null);
-            }} className="w-full rounded-lg bg-gray-900 p-3">
-              <option value="single">Single Strategy</option>
-              <option value="comparison">Strategy Comparison</option>
-              <option value="experiment">Multi-Seed Experiment</option>
-              <option value="sweep">Parameter Sweep</option>
-              <option value="scenario">Scenario Stress Test</option>
-            </select>
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-blue-400/30 bg-blue-400/10 font-mono text-sm font-bold text-blue-300">MS</div>
+              <h1 className="text-2xl font-semibold tracking-tight">MarketSim</h1>
+            </div>
+            <p className="mt-1 pl-12 text-sm text-gray-500">Market Making Simulation &amp; Strategy Laboratory</p>
           </div>
+          <div className="hidden items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-xs text-emerald-300 sm:flex">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            Simulation Lab
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto grid max-w-[1600px] gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="border-b border-white/10 bg-[#0a0d12] p-5 lg:min-h-[calc(100vh-86px)] lg:border-b-0 lg:border-r lg:p-6">
+          <div className="mb-7">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Simulation Mode</p>
+            <nav className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              {modes.map(([value, label, description]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => changeMode(value)}
+                  className={`rounded-xl border px-3.5 py-3 text-left transition ${
+                    mode === value
+                      ? "border-blue-400/40 bg-blue-400/10 text-white"
+                      : "border-white/5 bg-white/2 text-gray-400 hover:border-white/10 hover:bg-white/4 hover:text-gray-200"
+                  }`}
+                >
+                  <span className="block text-sm font-medium">{label}</span>
+                  <span className="mt-0.5 block text-xs text-gray-500">{description}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Configuration</p>
+            <span className="rounded-md bg-white/5 px-2 py-1 font-mono text-[10px] uppercase text-gray-500">{mode}</span>
+          </div>
+
+          <form onSubmit={(event) => { event.preventDefault(); void runSimulation(); }}>
+            <fieldset disabled={loading} className="space-y-5">
           {mode === "comparison" && (
             <p className="text-sm text-gray-500">Compare both strategies with the same parameters and seeded external order flow. Inventory risk applies only to Inventory-Aware.</p>
           )}
@@ -503,11 +539,11 @@ export default function Home() {
               <p className="text-sm text-gray-500">Run both strategies for each consecutive seed. Limits: 1–100 seed pairs and 1,000,000 external orders across both strategies. Inventory risk applies only to Inventory-Aware.</p>
               <div>
                 <label htmlFor="simulation-count" className="mb-2 block">Number of Simulations</label>
-                <input id="simulation-count" type="number" required min="1" max="100" step="1" value={numberOfSimulations} onChange={(event) => setNumberOfSimulations(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+                <input id="simulation-count" type="number" required min="1" max="100" step="1" value={numberOfSimulations} onChange={(event) => setNumberOfSimulations(Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10" />
               </div>
               <div>
                 <label htmlFor="starting-seed" className="mb-2 block">Starting Seed</label>
-                <input id="starting-seed" type="number" required min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER - numberOfSimulations + 1} step="1" value={startingSeed} onChange={(event) => setStartingSeed(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+                <input id="starting-seed" type="number" required min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER - numberOfSimulations + 1} step="1" value={startingSeed} onChange={(event) => setStartingSeed(Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10" />
               </div>
               {2 * numberOfSimulations * ticks * orderArrivalRate > 1000000 && (
                 <p role="alert" className="text-red-500">Reduce simulations, ticks, or market activity to stay within the 1,000,000-order limit.</p>
@@ -522,23 +558,23 @@ export default function Home() {
                   const parameter = event.target.value as SweepParameter;
                   setSweepParameter(parameter);
                   setSweepValues(sweepParameters[parameter].defaults);
-                }} className="w-full rounded-lg bg-gray-900 p-3">
+                }} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10">
                   {(Object.keys(sweepParameters) as SweepParameter[]).map((parameter) => <option key={parameter} value={parameter}>{sweepParameters[parameter].label}</option>)}
                 </select>
               </div>
               <div>
                 <label htmlFor="sweep-values" className="mb-2 block">Sweep Values</label>
-                <input id="sweep-values" type="text" required value={sweepValues} onChange={(event) => setSweepValues(event.target.value)} aria-describedby="sweep-help" className="w-full rounded-lg bg-gray-900 p-3" />
+                <input id="sweep-values" type="text" required value={sweepValues} onChange={(event) => setSweepValues(event.target.value)} aria-describedby="sweep-help" className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10" />
                 <p id="sweep-help" className="mt-2 text-sm text-gray-500">Enter 1–10 comma-separated values. {sweepParameter === "buy_pressure" && "Use fractions: 0.40 means 40%."}</p>
                 {sweepParameter === "buy_pressure" && validSweepValues && <p className="text-sm text-gray-500">{parsedSweepValues.map((value) => sweepValueLabel(sweepParameter, value)).join(", ")}</p>}
               </div>
               <div>
                 <label htmlFor="simulations-per-value" className="mb-2 block">Simulations Per Value</label>
-                <input id="simulations-per-value" type="number" required min="1" max="100" step="1" value={simulationsPerValue} onChange={(event) => setSimulationsPerValue(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+                <input id="simulations-per-value" type="number" required min="1" max="100" step="1" value={simulationsPerValue} onChange={(event) => setSimulationsPerValue(Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10" />
               </div>
               <div>
                 <label htmlFor="sweep-starting-seed" className="mb-2 block">Starting Seed</label>
-                <input id="sweep-starting-seed" type="number" required min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER - simulationsPerValue + 1} step="1" value={startingSeed} onChange={(event) => setStartingSeed(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+                <input id="sweep-starting-seed" type="number" required min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER - simulationsPerValue + 1} step="1" value={startingSeed} onChange={(event) => setStartingSeed(Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10" />
               </div>
               <p className="text-sm text-gray-500">{sweepParameters[sweepParameter].label} is controlled by the sweep; its normal control is disabled. Every point uses the same seed sequence. Limit: 1,000,000 external orders across the whole sweep.</p>
               {sweepParameter === "inventory_risk_factor" && <p className="text-sm text-gray-500">Basic remains an unchanged baseline at every risk factor; only Inventory-Aware is affected.</p>}
@@ -554,7 +590,7 @@ export default function Home() {
               <select
                 value={strategy}
                 onChange={(e) => setStrategy(e.target.value)}
-                className="w-full rounded-lg bg-gray-900 p-3"
+                className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10"
               >
                 <option value="inventory">
                   Inventory Aware
@@ -570,13 +606,13 @@ export default function Home() {
             <>
               <div>
                 <label htmlFor="scenario" className="mb-2 block">Scenario</label>
-                <select id="scenario" value={scenarioIndex} onChange={(event) => setScenarioIndex(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3">
+                <select id="scenario" value={scenarioIndex} onChange={(event) => setScenarioIndex(Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10">
                   {scenarioPresets.map((preset, index) => <option key={preset.name} value={index}>{preset.name}</option>)}
                 </select>
               </div>
               <div>
                 <label htmlFor="scenario-strategy" className="mb-2 block">Strategy or Comparison</label>
-                <select id="scenario-strategy" value={scenarioStrategy} onChange={(event) => setScenarioStrategy(event.target.value)} className="w-full rounded-lg bg-gray-900 p-3">
+                <select id="scenario-strategy" value={scenarioStrategy} onChange={(event) => setScenarioStrategy(event.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10">
                   <option value="comparison">Paired Comparison</option>
                   <option value="basic">Basic Market Maker</option>
                   <option value="inventory">Inventory-Aware Market Maker</option>
@@ -595,11 +631,11 @@ export default function Home() {
 
           <div>
             <label htmlFor="starting-price" className="mb-2 block">Starting Price</label>
-            <input id="starting-price" type="number" required min="0.01" step="0.01" value={startingPrice} onChange={(event) => setStartingPrice(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+            <input id="starting-price" type="number" required min="0.01" step="0.01" value={startingPrice} onChange={(event) => setStartingPrice(Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10" />
           </div>
           {mode !== "experiment" && mode !== "sweep" && <div>
             <label htmlFor="seed" className="mb-2 block">Random Seed</label>
-            <input id="seed" type="number" required step="1" min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER} value={seed} onChange={(event) => setSeed(Number(event.target.value))} className="w-full rounded-lg bg-gray-900 p-3" />
+            <input id="seed" type="number" required step="1" min={Number.MIN_SAFE_INTEGER} max={Number.MAX_SAFE_INTEGER} value={seed} onChange={(event) => setSeed(Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10" />
           </div>}
 
           {mode !== "scenario" && <>
@@ -694,7 +730,7 @@ export default function Home() {
               onChange={(e) =>
                 setSpread(Number(e.target.value))
               }
-              className="w-full rounded-lg bg-gray-900 p-3"
+              className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10"
             />
           </div>
 
@@ -711,7 +747,7 @@ export default function Home() {
               onChange={(e) =>
                 setOrderSize(Number(e.target.value))
               }
-              className="w-full rounded-lg bg-gray-900 p-3"
+              className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10"
             />
           </div>
 
@@ -731,7 +767,7 @@ export default function Home() {
                 onChange={(e) =>
                   setRiskFactor(Number(e.target.value))
                 }
-                className="w-full rounded-lg bg-gray-900 p-3"
+                className="w-full rounded-lg border border-white/10 bg-[#11161e] p-3 text-sm outline-none transition focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10"
               />
             </div>
           )}
@@ -739,14 +775,22 @@ export default function Home() {
           <button
             type="submit"
             disabled={loading || (mode === "sweep" && sweepError !== null) || (mode === "experiment" && 2 * numberOfSimulations * ticks * orderArrivalRate > 1000000)}
-            className="w-full rounded-lg bg-white p-3 font-semibold text-black disabled:opacity-50"
+            className="w-full rounded-lg bg-blue-500 p-3 font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading
               ? "Running..."
               : mode === "scenario" ? "Run Scenario" : mode === "sweep" ? "Run Sweep" : mode === "experiment" ? "Run Experiment" : mode === "comparison" ? "Run Comparison" : "Run Simulation"}
           </button>
-        </fieldset>
-      </form>
+            </fieldset>
+          </form>
+        </aside>
+
+        <section className="min-w-0 p-5 lg:p-8 xl:p-10">
+          <div className="mb-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">Analytics Workspace</p>
+            <h2 className="mt-2 text-2xl font-semibold">{modes.find(([value]) => value === mode)?.[1]}</h2>
+            <p className="mt-1 text-sm text-gray-500">Configure the market on the left, run the model, and inspect strategy behavior here.</p>
+          </div>
 
       {error && <p role="alert" className="mt-6 text-red-500">{error}</p>}
 
@@ -755,7 +799,7 @@ export default function Home() {
       {sweep && <SweepResults sweep={sweep} />}
 
       {experiment && (
-        <section className="mt-10 max-w-6xl space-y-6">
+        <section className="space-y-6">
           <h2 className="text-2xl font-semibold">Multi-Seed Experiment Results</h2>
           <p className="text-sm text-gray-500">
             {experiment.config.number_of_simulations} simulations per strategy, {experiment.config.ticks} ticks each.
@@ -767,7 +811,7 @@ export default function Home() {
             {(["basic", "inventory"] as const).map((key) => {
               const aggregate = experiment.aggregates[key];
               return (
-                <div key={key} className="space-y-5 rounded-xl bg-gray-900 p-5 text-gray-100">
+                <div key={key} className="space-y-5 rounded-2xl border border-white/10 bg-[#0e1219] p-5 text-gray-100">
                   <h3 className={`text-lg font-semibold ${key === "basic" ? "text-blue-400" : "text-amber-400"}`}>
                     {key === "basic" ? "Basic Market Maker" : "Inventory-Aware Market Maker"}
                   </h3>
@@ -802,7 +846,7 @@ export default function Home() {
             ] as const).map(([metric, title]) => (
               <div key={metric}>
                 <h3 className="mb-3 text-lg font-medium">{title}</h3>
-                <div className="h-80 rounded-xl bg-gray-900 p-4">
+                <div className="h-80 rounded-2xl border border-white/10 bg-[#0e1219] p-4">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={experiment.per_seed.map((pair) => ({
                       seed: pair.seed,
@@ -825,14 +869,14 @@ export default function Home() {
       )}
 
       {comparison && (
-        <section className="mt-10 max-w-6xl space-y-6">
+        <section className="space-y-6">
           <h2 className="text-2xl font-semibold">Strategy Comparison Results</h2>
           <p className="text-sm text-gray-500">{comparison.basic.results.ticks} ticks · Seed: {comparison.seed}. Prices reflect each strategy’s order book and may differ.</p>
           <div className="grid gap-6 md:grid-cols-2">
             {(["basic", "inventory"] as const).map((key) => {
               const result = comparison[key].results;
               return (
-                <div key={key} className="space-y-2 rounded-xl bg-gray-900 p-5 text-gray-100">
+                <div key={key} className="space-y-2 rounded-2xl border border-white/10 bg-[#0e1219] p-5 text-gray-100">
                   <h3 className={`text-lg font-semibold ${key === "basic" ? "text-blue-400" : "text-amber-400"}`}>
                     {key === "basic" ? "Basic Market Maker" : "Inventory-Aware Market Maker"}
                   </h3>
@@ -849,7 +893,7 @@ export default function Home() {
             ] as const).map(([metric, title]) => (
               <div key={metric} className={metric === "midprice" ? "lg:col-span-2" : ""}>
                 <h3 className="mb-3 text-lg font-medium">{title}</h3>
-                <div className="h-80 rounded-xl bg-gray-900 p-4">
+                <div className="h-80 rounded-2xl border border-white/10 bg-[#0e1219] p-4">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={comparison.basic.history[metric].map((value, index) => ({
                       tick: index + 1,
@@ -872,7 +916,7 @@ export default function Home() {
       )}
 
       {results && (
-        <div className="mt-10 space-y-2">
+        <div className="space-y-4">
           <h2 className="text-2xl font-semibold">
             Results
           </h2>
@@ -881,14 +925,14 @@ export default function Home() {
             Ticks: {results.ticks}
           </p>
 
-          <div className="max-w-md rounded-xl bg-gray-900 p-5 text-gray-100">
+          <div className="max-w-md rounded-2xl border border-white/10 bg-[#0e1219] p-5 text-gray-100">
             <SimulationMetrics results={results} />
           </div>
         </div>
       )}
 
       {history && (
-        <div className="mt-12 max-w-6xl">
+        <div className="mt-10">
           <h2 className="mb-6 text-2xl font-semibold">
             Simulation Analytics
           </h2>
@@ -899,7 +943,7 @@ export default function Home() {
                 Market Price
               </h3>
 
-              <div className="h-80 rounded-xl bg-gray-900 p-4">
+              <div className="h-80 rounded-2xl border border-white/10 bg-[#0e1219] p-4">
                 <ResponsiveContainer
                   width="100%"
                   height="100%"
@@ -934,7 +978,7 @@ export default function Home() {
                 Inventory
               </h3>
 
-              <div className="h-80 rounded-xl bg-gray-900 p-4">
+              <div className="h-80 rounded-2xl border border-white/10 bg-[#0e1219] p-4">
                 <ResponsiveContainer
                   width="100%"
                   height="100%"
@@ -968,7 +1012,7 @@ export default function Home() {
                 P&L
               </h3>
 
-              <div className="h-80 rounded-xl bg-gray-900 p-4">
+              <div className="h-80 rounded-2xl border border-white/10 bg-[#0e1219] p-4">
                 <ResponsiveContainer
                   width="100%"
                   height="100%"
@@ -1000,6 +1044,8 @@ export default function Home() {
           </div>
         </div>
       )}
+        </section>
+      </div>
     </main>
   );
 }
