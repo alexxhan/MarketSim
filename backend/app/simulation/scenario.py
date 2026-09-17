@@ -43,7 +43,7 @@ def run_scenario(regimes, strategy="comparison", **config):
             order_arrival_rate=first["order_arrival_rate"],
             **config
         )
-        history = {key: [] for key in ("pnl", "inventory", "midprice", "regime_id", "regime_name")}
+        history = {key: [] for key in ("pnl", "inventory", "midprice", "reference_price", "mark_price", "regime_id", "regime_name")}
         for index, regime in enumerate(regimes):
             engine.volatility = regime["volatility"]
             engine.buy_pressure = regime["buy_pressure"]
@@ -52,7 +52,7 @@ def run_scenario(regimes, strategy="comparison", **config):
             engine.order_flow.buy_pressure = regime["buy_pressure"]
             for _ in range(regime["duration_ticks"]):
                 state = engine.step()
-                for metric in ("pnl", "inventory", "midprice"):
+                for metric in ("pnl", "inventory", "midprice", "reference_price", "mark_price"):
                     history[metric].append(state[metric])
                 history["regime_id"].append(index)
                 history["regime_name"].append(regime["name"])
@@ -65,7 +65,9 @@ def run_scenario(regimes, strategy="comparison", **config):
                 "final_inventory": state["inventory"],
                 "final_portfolio_value": state["portfolio_value"],
                 "final_pnl": state["pnl"],
-                "final_midprice": state["midprice"]
+                "final_midprice": state["midprice"],
+                "final_reference_price": state["reference_price"],
+                "final_mark_price": state["mark_price"]
             },
             "history": history
         }

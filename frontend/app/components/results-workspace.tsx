@@ -39,12 +39,13 @@ type MetricDefinition<T> = {
 const simulationMetrics: MetricDefinition<SimulationResults>[] = [
   { key: "final_pnl", label: "Final P&L", group: "Performance", format: "money" },
   { key: "final_inventory", label: "Final Inventory", group: "Inventory Risk" },
-  { key: "maximum_absolute_inventory", label: "Maximum Absolute Inventory", group: "Inventory Risk" },
+  { key: "maximum_absolute_inventory", label: "Maximum Tick-End |Inventory|", group: "Inventory Risk" },
   { key: "market_maker_fills", label: "Market Maker Fills", group: "Execution" },
   { key: "final_portfolio_value", label: "Portfolio Value", group: "Performance", format: "money" },
   { key: "final_cash", label: "Cash", group: "Performance", format: "money" },
-  { key: "pnl_per_fill", label: "P&L per Fill", group: "Performance", format: "money" },
-  { key: "final_midprice", label: "Final Midprice", group: "Performance", format: "money" },
+  { key: "pnl_per_fill", label: "MTM P&L per Fill", group: "Performance", format: "money" },
+  { key: "final_midprice", label: "Final Book Midprice", group: "Performance", format: "money" },
+  { key: "final_mark_price", label: "Final Reference / Mark Price", group: "Performance", format: "money" },
   { key: "total_market_trades", label: "Total Market Trades", group: "Execution" },
   { key: "total_trades", label: "Total Trades", group: "Execution" },
   { key: "market_maker_buy_fills", label: "Market Maker Buy Fills", group: "Execution" },
@@ -52,7 +53,7 @@ const simulationMetrics: MetricDefinition<SimulationResults>[] = [
   { key: "market_maker_executed_volume", label: "Executed Volume", group: "Execution" },
   {
     key: "average_absolute_inventory",
-    label: "Average Absolute Inventory",
+    label: "Average Tick-End |Inventory|",
     group: "Inventory Risk",
     format: "decimal",
   },
@@ -73,19 +74,19 @@ const aggregateMetrics: MetricDefinition<ExperimentAggregate>[] = [
   { key: "unavailable_pnl_count", label: "Unavailable P&L", group: "Performance" },
   {
     key: "average_absolute_inventory",
-    label: "Average Absolute Inventory",
+    label: "Average Tick-End |Inventory|",
     group: "Inventory Risk",
     format: "decimal",
   },
   {
     key: "average_maximum_absolute_inventory",
-    label: "Average Maximum Absolute Inventory",
+    label: "Average Maximum Tick-End |Inventory|",
     group: "Inventory Risk",
     format: "decimal",
   },
   {
     key: "worst_maximum_absolute_inventory",
-    label: "Worst Maximum Absolute Inventory",
+    label: "Worst Maximum Tick-End |Inventory|",
     group: "Inventory Risk",
   },
   {
@@ -225,7 +226,6 @@ function ChartCard({
   labelFormatter,
   linear = false,
   dots = false,
-  connectNulls = false,
   syncId,
   boundaries = [],
 }: {
@@ -242,7 +242,6 @@ function ChartCard({
   labelFormatter?: (value: number) => string;
   linear?: boolean;
   dots?: boolean;
-  connectNulls?: boolean;
   syncId?: string;
   boundaries?: ScenarioResponse["regime_boundaries"];
 }) {
@@ -333,7 +332,7 @@ function ChartCard({
                 dot={dots ? { r: 3 } : false}
                 activeDot={{ r: 4 }}
                 strokeWidth={2}
-                connectNulls={connectNulls}
+                connectNulls={false}
                 isAnimationActive={false}
               />
             ))}
@@ -347,11 +346,9 @@ function ChartCard({
 function SimulationAnalytics({
   runs,
   scenario,
-  single = false,
 }: {
   runs: Partial<Record<Strategy, SimulationResponse>>;
   scenario?: ScenarioResponse;
-  single?: boolean;
 }) {
   const syncId = useId();
   const present = strategies.filter((strategy) => runs[strategy]);
@@ -374,9 +371,9 @@ function SimulationAnalytics({
       <div className="chart-grid">
         {(
           [
-            ["pnl", "P&L", "Mark-to-market portfolio performance"],
-            ["inventory", "Inventory Exposure", "Position held through the market path"],
-            ["midprice", "Market Price", "Order-book midprice"],
+            ["pnl", "P&L", "Total P&L marked to the external reference price"],
+            ["inventory", "Inventory Exposure", "Position sampled at the end of each tick"],
+            ["midprice", "Market Price", "Strategy-specific book midprice; gaps indicate a one-sided book"],
           ] as const
         ).map(([metric, title, subtitle]) => (
           <ChartCard
@@ -397,7 +394,6 @@ function SimulationAnalytics({
             numeric={!!scenario}
             domain={scenario ? [1, scenario.total_ticks] : undefined}
             linear={!!scenario}
-            connectNulls={single && metric !== "inventory"}
             boundaries={scenario?.regime_boundaries}
             labelFormatter={
               scenario
@@ -409,10 +405,9 @@ function SimulationAnalytics({
         ))}
       </div>
       <p className="analytics-note">
-        {single
-          ? "Values are marked to the current order-book midprice."
-          : "Each strategy has its own order-book midprice; prices may differ despite identical external order flow."}{" "}
-        P&amp;L and midprice may be unavailable when the book is not two-sided.
+        Inventory is marked to the external reference price, shared by paired strategies. Book midprice
+        may be unavailable when the book is one-sided. Inventory risk metrics use tick-end samples.
+        MTM P&amp;L per Fill is total marked P&amp;L divided by maker fills, not realized profit per execution.
       </p>
       <MetricGroup metrics={simulationMetrics} runs={values} />
     </>
@@ -420,7 +415,7 @@ function SimulationAnalytics({
 }
 
 const aggregationNote =
-  "P&L statistics exclude unavailable values separately for each strategy and use population standard deviation. Inventory and execution statistics include every seed. Chart gaps indicate unavailable P&L.";
+  "All statistics include every paired seed; P&L uses a common external mark and population standard deviation. Failed runs reject the entire experiment. Inventory risk metrics use tick-end samples.";
 
 function ExperimentResults({ experiment }: { experiment: ExperimentResponse }) {
   const runs = strategies.map((strategy) => ({ strategy, values: experiment.aggregates[strategy] }));
@@ -431,13 +426,17 @@ function ExperimentResults({ experiment }: { experiment: ExperimentResponse }) {
         {(
           [
             ["final_pnl", "P&L by Seed"],
-            ["maximum_absolute_inventory", "Maximum Absolute Inventory by Seed"],
+            ["maximum_absolute_inventory", "Maximum Tick-End |Inventory| by Seed"],
           ] as const
         ).map(([metric, title]) => (
           <ChartCard
             key={metric}
             title={title}
-            subtitle="Paired strategies on each seeded market path"
+            subtitle={
+              metric === "maximum_absolute_inventory"
+                ? "Maximum tick-end exposure on each paired market path"
+                : "Paired strategies valued at a common external mark"
+            }
             primary
             data={experiment.per_seed.map((pair) => ({
               seed: pair.seed,
@@ -485,7 +484,7 @@ function SweepResults({ sweep }: { sweep: SweepResponse }) {
           [
             ["average_pnl", "Average P&L"],
             ["pnl_standard_deviation", "P&L Standard Deviation"],
-            ["average_absolute_inventory", "Average Absolute Inventory"],
+            ["average_absolute_inventory", "Average Tick-End |Inventory|"],
             ["average_market_maker_fills", "Average Market Maker Fills"],
           ] as const
         ).map(([metric, title]) => (
@@ -577,7 +576,7 @@ export function ResultsWorkspace({ result, onAdjust }: { result: RunResult; onAd
   let analytics: ReactNode;
   switch (result.mode) {
     case "single":
-      analytics = <SimulationAnalytics runs={{ [c.strategy]: result.data }} single />;
+      analytics = <SimulationAnalytics runs={{ [c.strategy]: result.data }} />;
       break;
     case "comparison":
       analytics = <SimulationAnalytics runs={result.data} />;

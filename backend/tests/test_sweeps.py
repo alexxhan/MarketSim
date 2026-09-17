@@ -39,7 +39,7 @@ class SweepTests(unittest.TestCase):
 
                     def capture_order():
                         order = generate()
-                        flow.append((order.side, order.price, order.quantity))
+                        flow.append((order.side, order.price, order.quantity, engine.order_flow.reference_price))
                         return order
 
                     engine.order_flow.generate_order = capture_order
@@ -108,7 +108,7 @@ class SweepTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:3000")
 
-    def test_null_pnl_is_preserved(self):
+    def test_one_sided_books_have_complete_marked_pnl(self):
         config = self.config("buy_pressure", [0, 1])
         config["ticks"] = 1
         with TestClient(app) as client:
@@ -117,8 +117,8 @@ class SweepTests(unittest.TestCase):
             for point in response.json()["results"]:
                 for strategy in ("basic", "inventory"):
                     for metric in ("average_pnl", "pnl_standard_deviation", "best_pnl", "worst_pnl"):
-                        self.assertIsNone(point[strategy][metric])
-                    self.assertEqual(point[strategy]["unavailable_pnl_count"], 2)
+                        self.assertEqual(point[strategy][metric], 0)
+                    self.assertEqual(point[strategy]["unavailable_pnl_count"], 0)
 
     def test_invalid_parameters_values_and_limits_rejected_before_execution(self):
         invalid = [

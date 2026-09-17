@@ -1,6 +1,7 @@
 import random
 
 from app.market.order import Order, OrderSide
+from app.market.validation import positive_price
 
 
 class OrderFlowGenerator:
@@ -12,7 +13,9 @@ class OrderFlowGenerator:
         buy_pressure: float = 0.50,
         seed: int | None = None
     ):
-        if volatility < 0:
+        positive_price(starting_price, "Starting price")
+        positive_price(tick_size, "Tick size")
+        if type(volatility) is not int or volatility < 0:
             raise ValueError("Volatility must be 0 or greater")
 
         if not 0.0 <= buy_pressure <= 1.0:
@@ -36,7 +39,7 @@ class OrderFlowGenerator:
             * self.tick_size
         )
 
-        self.reference_price += price_move
+        self.reference_price = positive_price(self.reference_price + price_move, "Reference price")
 
         offset = self.rng.randint(-5, 5) * self.tick_size
 

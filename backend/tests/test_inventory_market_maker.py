@@ -1,34 +1,13 @@
-from app.strategies.inventory_market_maker import (
-    InventoryMarketMaker
-)
+import unittest
+
+from app.strategies.inventory_market_maker import InventoryMarketMaker
 
 
-market_maker = InventoryMarketMaker(
-    spread=0.04,
-    order_size=10,
-    inventory_risk_factor=0.001
-)
-
-
-def show_quotes(label):
-    bid, ask = market_maker.generate_quotes(
-        midprice=100.00
-    )
-
-    print(f"\n{label}")
-    print(
-        f"Inventory: "
-        f"{market_maker.portfolio.inventory:+d}"
-    )
-    print(f"Bid: ${bid.price:.2f}")
-    print(f"Ask: ${ask.price:.2f}")
-
-
-market_maker.portfolio.inventory = 0
-show_quotes("NEUTRAL")
-
-market_maker.portfolio.inventory = 30
-show_quotes("LONG")
-
-market_maker.portfolio.inventory = -30
-show_quotes("SHORT")
+class InventoryMarketMakerTests(unittest.TestCase):
+    def test_inventory_shifts_reservation_price_in_correct_direction(self):
+        maker = InventoryMarketMaker(spread=0.04, inventory_risk_factor=0.001)
+        for inventory, expected in ((0, (99.98, 100.02)), (30, (99.95, 99.99)), (-30, (100.01, 100.05))):
+            with self.subTest(inventory=inventory):
+                maker.portfolio.inventory = inventory
+                bid, ask = maker.generate_quotes(100)
+                self.assertEqual((bid.price, ask.price), expected)

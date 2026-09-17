@@ -83,17 +83,19 @@ class PerformanceMetricsTests(unittest.TestCase):
         self.assertEqual(state["metrics"]["average_absolute_inventory"], 0)
         self.assertEqual(state["metrics"]["maximum_absolute_inventory"], 0)
 
-    def test_fills_with_null_pnl(self):
+    def test_one_sided_book_retains_marked_pnl(self):
         engine = SimulationEngine(seed=42)
         engine.order_book.add_order(Order(100, OrderSide.BUY, 99, 1))
         engine.order_book.add_order(Order(101, OrderSide.SELL, 101, 1))
         with patch.object(engine.order_flow, "generate_order", return_value=Order(1, OrderSide.BUY, 102, 11)):
             state = engine.step()
-        self.assertIsNone(state["pnl"])
+        self.assertIsNone(state["midprice"])
+        self.assertEqual(state["mark_price"], 100)
+        self.assertAlmostEqual(state["pnl"], 0.20)
         self.assertEqual(state["metrics"]["market_maker_fills"], 1)
         self.assertEqual(state["metrics"]["market_maker_sell_fills"], 1)
         self.assertEqual(state["metrics"]["market_maker_executed_volume"], 10)
-        self.assertIsNone(state["metrics"]["pnl_per_fill"])
+        self.assertAlmostEqual(state["metrics"]["pnl_per_fill"], 0.20)
 
     def test_seeded_api_results_and_metrics_are_deterministic(self):
         with TestClient(app) as client:

@@ -9,6 +9,8 @@ class Trade:
     price: float
     quantity: int
     timestamp: float = 0.0
+    buyer_owner: str | None = None
+    seller_owner: str | None = None
 
     def __post_init__(self):
         if self.timestamp == 0.0:

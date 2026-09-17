@@ -1,76 +1,26 @@
-from app.simulation.engine import SimulationEngine
+import unittest
+from unittest.mock import patch
+
+from app.market.order import OrderSide
+from app.simulation.order_flow import OrderFlowGenerator
 
 
-TICKS = 1000
-SEED = 42
+class MarketConditionsTests(unittest.TestCase):
+    def test_extreme_pressure_controls_side_and_zero_volatility_keeps_reference(self):
+        for pressure, side in ((0, OrderSide.SELL), (1, OrderSide.BUY)):
+            flow = OrderFlowGenerator(volatility=0, buy_pressure=pressure, seed=42)
+            for _ in range(30):
+                order = flow.generate_order()
+                self.assertEqual(order.side, side)
+                self.assertEqual(flow.reference_price, 100)
+                self.assertGreaterEqual(order.price, 99.95)
+                self.assertLessEqual(order.price, 100.05)
 
-
-def run_scenario(
-    name: str,
-    volatility: int,
-    buy_pressure: float
-):
-    engine = SimulationEngine(
-        strategy="inventory",
-        volatility=volatility,
-        buy_pressure=buy_pressure,
-        seed=SEED
-    )
-
-    buy_orders = 0
-    sell_orders = 0
-    state = None
-
-    for _ in range(TICKS):
-        state = engine.step()
-
-        for order in state["orders"]:
-            if order.side.value == "BUY":
-                buy_orders += 1
-            else:
-                sell_orders += 1
-
-    print(f"\n{name}\n")
-    print(f"Volatility: {volatility}")
-    print(f"Buy Pressure: {buy_pressure:.0%}")
-    print(f"BUY Orders: {buy_orders}")
-    print(f"SELL Orders: {sell_orders}")
-    print(
-        f"Reference Price: "
-        f"${engine.order_flow.reference_price:.2f}"
-    )
-    print(f"Final Inventory: {state['inventory']:+d}")
-
-    if state["pnl"] is not None:
-        print(f"P&L: ${state['pnl']:+.2f}")
-    else:
-        print("P&L: unavailable")
-
-
-print("\nMarketSim Market Conditions Test")
-
-run_scenario(
-    name="Normal Market",
-    volatility=1,
-    buy_pressure=0.50
-)
-
-run_scenario(
-    name="Buying Pressure",
-    volatility=1,
-    buy_pressure=0.75
-)
-
-run_scenario(
-    name="Selling Pressure",
-    volatility=1,
-    buy_pressure=0.25
-)
-
-run_scenario(
-    name="High Volatility",
-    volatility=5,
-    buy_pressure=0.50
-)
-
-print("\nMarket condition tests finished.\n")
+    def test_reference_move_and_order_offset_are_separate(self):
+        flow = OrderFlowGenerator(starting_price=100, volatility=3, seed=42)
+        with patch.object(flow.rng, "random", return_value=0.2), patch.object(flow.rng, "randint", side_effect=[3, -5, 7]):
+            order = flow.generate_order()
+        self.assertEqual(flow.reference_price, 100.03)
+        self.assertEqual(order.price, 99.98)
+        self.assertEqual(order.quantity, 7)
+        self.assertEqual(order.side, OrderSide.BUY)

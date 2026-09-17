@@ -2,8 +2,11 @@ from typing import Annotated, Literal
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, model_validator
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.market.validation import SimulationDomainError
 from app.simulation.engine import SimulationEngine
 from app.simulation.experiment import run_experiment
 from app.simulation.sweep import run_sweep
@@ -27,7 +30,23 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(SimulationDomainError)
+async def simulation_domain_error(request, error):
+    return JSONResponse(status_code=422, content={"detail": str(error)})
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(request, error):
+    details = [
+        {"loc": item["loc"], "msg": item["msg"], "type": item["type"]}
+        for item in error.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": details})
+
+
 class MarketParameters(BaseModel):
+    model_config = ConfigDict(strict=True, allow_inf_nan=False)
+
     ticks: int = Field(default=1000, ge=1, le=100000)
     starting_price: float = Field(default=100.0, gt=0)
     volatility: int = Field(default=1, ge=0, le=20)
@@ -39,8 +58,8 @@ class MarketParameters(BaseModel):
 
 
 class SimulationRequest(MarketParameters):
-    strategy: str = "inventory"
-    seed: int | None = None
+    strategy: Literal["basic", "inventory"] = "inventory"
+    seed: int | None = Field(default=None, ge=-9007199254740991, le=9007199254740991)
 
 
 class ExperimentRequest(MarketParameters):
@@ -71,6 +90,10 @@ class SweepRequest(MarketParameters):
         market_config = self.model_dump(exclude={"sweep_parameter", "sweep_values", "simulations_per_value"})
         workload = 0
         for index, value in enumerate(self.sweep_values):
+            if self.sweep_parameter in ("volatility", "order_arrival_rate"):
+                if not value.is_integer():
+                    raise ValueError(f"{self.sweep_parameter} values must be integers")
+                value = int(value)
             point = ExperimentRequest(
                 **{**market_config, self.sweep_parameter: value},
                 number_of_simulations=self.simulations_per_value
@@ -83,6 +106,8 @@ class SweepRequest(MarketParameters):
 
 
 class ScenarioRequest(BaseModel):
+    model_config = ConfigDict(strict=True, allow_inf_nan=False)
+
     regimes: list[Regime] = Field(min_length=1, max_length=10)
     strategy: Literal["basic", "inventory", "comparison"] = "comparison"
     starting_price: float = Field(default=100.0, gt=0, allow_inf_nan=False)
@@ -130,6 +155,8 @@ def run_simulation(config: SimulationRequest):
     pnl_history = []
     inventory_history = []
     midprice_history = []
+    reference_price_history = []
+    mark_price_history = []
 
     state = None
 
@@ -139,6 +166,8 @@ def run_simulation(config: SimulationRequest):
         pnl_history.append(state["pnl"])
         inventory_history.append(state["inventory"])
         midprice_history.append(state["midprice"])
+        reference_price_history.append(state["reference_price"])
+        mark_price_history.append(state["mark_price"])
 
     return {
         "config": config.model_dump(),
@@ -150,12 +179,16 @@ def run_simulation(config: SimulationRequest):
             "final_inventory": state["inventory"],
             "final_portfolio_value": state["portfolio_value"],
             "final_pnl": state["pnl"],
-            "final_midprice": state["midprice"]
+            "final_midprice": state["midprice"],
+            "final_reference_price": state["reference_price"],
+            "final_mark_price": state["mark_price"]
         },
         "history": {
             "pnl": pnl_history,
             "inventory": inventory_history,
-            "midprice": midprice_history
+            "midprice": midprice_history,
+            "reference_price": reference_price_history,
+            "mark_price": mark_price_history
         }
     }
 

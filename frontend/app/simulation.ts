@@ -13,13 +13,17 @@ export type SimulationResults = {
   pnl_per_fill: number | null;
   final_cash: number;
   final_inventory: number;
-  final_portfolio_value: number | null;
-  final_pnl: number | null;
+  final_portfolio_value: number;
+  final_pnl: number;
   final_midprice: number | null;
+  final_reference_price: number;
+  final_mark_price: number;
 };
 
 export type SimulationHistory = {
-  pnl: (number | null)[];
+  pnl: number[];
+  reference_price: number[];
+  mark_price: number[];
   inventory: number[];
   midprice: (number | null)[];
 };
@@ -38,10 +42,10 @@ export type Comparison = {
 export type ExperimentAggregate = {
   valid_pnl_count: number;
   unavailable_pnl_count: number;
-  average_pnl: number | null;
-  pnl_standard_deviation: number | null;
-  best_pnl: number | null;
-  worst_pnl: number | null;
+  average_pnl: number;
+  pnl_standard_deviation: number;
+  best_pnl: number;
+  worst_pnl: number;
   average_final_inventory: number;
   average_absolute_inventory: number;
   average_maximum_absolute_inventory: number;
@@ -51,7 +55,7 @@ export type ExperimentAggregate = {
 };
 
 export type ExperimentSeedResult = {
-  final_pnl: number | null;
+  final_pnl: number;
   maximum_absolute_inventory: number;
 };
 
@@ -236,6 +240,10 @@ async function post<T>(path: string, body: object): Promise<T> {
     throw new Error("Cannot reach the simulation API. Check that the backend is running, then try again.");
   }
   if (!response.ok) {
+    if (response.status === 422) {
+      const error: { detail?: unknown } = await response.json().catch(() => ({}));
+      if (typeof error.detail === "string") throw new Error(error.detail);
+    }
     throw new Error(
       response.status === 422
         ? "The run could not start. Check the parameter values and workload limits, then try again."

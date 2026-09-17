@@ -25,6 +25,9 @@ class ScenarioTests(unittest.TestCase):
             dict(regime_id=1, name="Shock", start_tick=3, end_tick=5),
             dict(regime_id=2, name="Recovery", start_tick=6, end_tick=7)
         ])
+        basic, inventory = response["runs"]["basic"], response["runs"]["inventory"]
+        self.assertEqual(basic["history"]["mark_price"], inventory["history"]["mark_price"])
+        self.assertEqual(basic["results"]["final_mark_price"], inventory["results"]["final_mark_price"])
         for run in response["runs"].values():
             self.assertEqual(run["results"]["ticks"], 7)
             self.assertEqual(run["history"]["regime_id"], [0, 0, 1, 1, 1, 2, 2])
@@ -46,7 +49,7 @@ class ScenarioTests(unittest.TestCase):
 
             def capture_order():
                 order = generate()
-                record["orders"].append((order.order_id, order.side, order.price, order.quantity))
+                record["orders"].append((order.order_id, order.side, order.price, order.quantity, flow.reference_price))
                 return order
 
             def capture_step():
@@ -66,6 +69,7 @@ class ScenarioTests(unittest.TestCase):
             run_scenario(self.regimes(), seed=42, starting_price=100)
         self.assertEqual(factory.call_count, 2)
         self.assertEqual(records[0]["orders"], records[1]["orders"])
+        self.assertEqual(records[0]["after"], records[1]["after"])
         expected_conditions = [(1, 0.5, 2, 1, 0.5)] * 2 + [(5, 0.7, 4, 5, 0.7)] * 3 + [(0, 0.3, 1, 0, 0.3)] * 2
         for record in records:
             self.assertEqual(record["conditions"], expected_conditions)
@@ -79,7 +83,7 @@ class ScenarioTests(unittest.TestCase):
             generator.buy_pressure = regime["buy_pressure"]
             for _ in range(regime["duration_ticks"] * regime["order_arrival_rate"]):
                 order = generator.generate_order()
-                expected_orders.append((order.order_id, order.side, order.price, order.quantity))
+                expected_orders.append((order.order_id, order.side, order.price, order.quantity, generator.reference_price))
         self.assertEqual(records[0]["orders"], expected_orders)
         self.assertEqual(records[0]["after"][-1][1], generator.reference_price)
         self.assertEqual(records[0]["after"][-1][0], generator.rng.getstate())
@@ -95,7 +99,7 @@ class ScenarioTests(unittest.TestCase):
                 self.assertEqual(scenario.status_code, 200)
                 run = scenario.json()["runs"][strategy]
                 self.assertEqual(run["results"], original.json()["results"])
-                for key in ("pnl", "inventory", "midprice"):
+                for key in ("pnl", "inventory", "midprice", "reference_price", "mark_price"):
                     self.assertEqual(run["history"][key], original.json()["history"][key])
                 self.assertEqual(list(scenario.json()["runs"]), [strategy])
 
@@ -105,7 +109,7 @@ class ScenarioTests(unittest.TestCase):
         split = run_scenario([{**regime, "duration_ticks": 30}, {**regime, "duration_ticks": 70}], seed=42)
         for strategy in ("basic", "inventory"):
             self.assertEqual(whole["runs"][strategy]["results"], split["runs"][strategy]["results"])
-            for key in ("pnl", "inventory", "midprice"):
+            for key in ("pnl", "inventory", "midprice", "reference_price", "mark_price"):
                 self.assertEqual(whole["runs"][strategy]["history"][key], split["runs"][strategy]["history"][key])
 
     def test_api_determinism_paired_equivalence_and_cors(self):

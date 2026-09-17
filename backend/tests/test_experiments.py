@@ -4,6 +4,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import ExperimentRequest, app
+from app.market.validation import SimulationDomainError
 from app.simulation.engine import SimulationEngine
 from app.simulation.experiment import aggregate_results, run_experiment
 
@@ -22,7 +23,7 @@ class ExperimentTests(unittest.TestCase):
 
             def capture_order():
                 order = generate()
-                flow.append((order.side, order.price, order.quantity))
+                flow.append((order.side, order.price, order.quantity, engine.order_flow.reference_price))
                 return order
 
             engine.order_flow.generate_order = capture_order
@@ -48,6 +49,7 @@ class ExperimentTests(unittest.TestCase):
                 self.assertEqual(getattr(inventory, key), config[key])
             self.assertEqual(flows[2 * index], flows[2 * index + 1])
             self.assertEqual(len(flows[2 * index]), 300)
+            self.assertEqual(pair["basic"]["final_mark_price"], pair["inventory"]["final_mark_price"])
             for strategy in ("basic", "inventory"):
                 self.assertEqual(pair[strategy]["seed"], pair["seed"])
 
@@ -79,26 +81,16 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(result["valid_pnl_count"], 3)
         self.assertEqual(result["unavailable_pnl_count"], 0)
 
-    def test_mixed_null_pnl(self):
-        result = aggregate_results(self.sample_results([None, -2, 4]))
-        self.assertEqual(result["average_pnl"], 1)
-        self.assertEqual(result["pnl_standard_deviation"], 3)
-        self.assertEqual(result["best_pnl"], 4)
-        self.assertEqual(result["worst_pnl"], -2)
-        self.assertEqual(result["valid_pnl_count"], 2)
-        self.assertEqual(result["unavailable_pnl_count"], 1)
-        self.assertEqual(result["average_absolute_inventory"], 4)
-        self.assertEqual(result["average_market_maker_fills"], 3)
+    def test_incomplete_or_nonfinite_results_are_rejected(self):
+        for values in ([None, -2, 4], [None, None, None], [0, float("nan"), 1], [0, float("inf"), 1]):
+            with self.subTest(values=values), self.assertRaises(SimulationDomainError):
+                aggregate_results(self.sample_results(values))
 
-    def test_all_null_and_single_valid_pnl(self):
-        result = aggregate_results(self.sample_results([None, None, None]))
-        for key in ("average_pnl", "pnl_standard_deviation", "best_pnl", "worst_pnl"):
-            self.assertIsNone(result[key])
-        self.assertEqual(result["valid_pnl_count"], 0)
-        self.assertEqual(result["unavailable_pnl_count"], 3)
-        result = aggregate_results(self.sample_results([None, 0, None]))
-        self.assertEqual(result["average_pnl"], 0)
+    def test_single_seed_population_standard_deviation(self):
+        result = aggregate_results(self.sample_results([4]))
+        self.assertEqual(result["average_pnl"], 4)
         self.assertEqual(result["pnl_standard_deviation"], 0)
+        self.assertEqual(result["valid_pnl_count"], 1)
 
     def test_api_determinism_and_single_run_equivalence(self):
         config = dict(
@@ -129,17 +121,17 @@ class ExperimentTests(unittest.TestCase):
             for strategy in ("basic", "inventory"):
                 self.assertEqual(runs[0]["aggregates"][strategy], aggregate_results([pair[strategy] for pair in runs[0]["per_seed"]]))
 
-    def test_api_nulls_and_one_simulation(self):
+    def test_api_one_sided_book_and_one_simulation(self):
         with TestClient(app) as client:
             response = client.post("/experiments/run", json={"number_of_simulations": 1, "ticks": 1, "buy_pressure": 1})
             self.assertEqual(response.status_code, 200)
             data = response.json()
             self.assertEqual(len(data["per_seed"]), 1)
             for strategy in ("basic", "inventory"):
-                self.assertIsNone(data["per_seed"][0][strategy]["final_pnl"])
-                self.assertIsNone(data["per_seed"][0][strategy]["portfolio_value"])
-                self.assertIsNone(data["aggregates"][strategy]["average_pnl"])
-                self.assertEqual(data["aggregates"][strategy]["unavailable_pnl_count"], 1)
+                self.assertEqual(data["per_seed"][0][strategy]["final_pnl"], 0)
+                self.assertEqual(data["per_seed"][0][strategy]["portfolio_value"], 100000)
+                self.assertEqual(data["aggregates"][strategy]["average_pnl"], 0)
+                self.assertEqual(data["aggregates"][strategy]["unavailable_pnl_count"], 0)
 
     def test_validation_and_cors(self):
         invalid = [

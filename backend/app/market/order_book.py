@@ -7,11 +7,13 @@ class OrderBook:
         self.bids: list[Order] = []
         self.asks: list[Order] = []
         self._next_arrival_sequence = 0
-        self._arrival_sequences: dict[int, int] = {}
+        self._arrival_sequences: dict[tuple[str | None, int], int] = {}
 
 
     def add_order(self, order: Order):
-        self._arrival_sequences[id(order)] = self._next_arrival_sequence
+        if order.identity in self._arrival_sequences:
+            raise ValueError("An order with this owner and ID is already resting")
+        self._arrival_sequences[order.identity] = self._next_arrival_sequence
         self._next_arrival_sequence += 1
 
         if order.side == OrderSide.BUY:
@@ -20,7 +22,7 @@ class OrderBook:
             self.bids.sort(
                 key=lambda order: (
                     -order.price,
-                    self._arrival_sequences[id(order)]
+                    self._arrival_sequences[order.identity]
                 )
             )
 
@@ -30,22 +32,22 @@ class OrderBook:
             self.asks.sort(
                 key=lambda order: (
                     order.price,
-                    self._arrival_sequences[id(order)]
+                    self._arrival_sequences[order.identity]
                 )
             )
 
 
-    def cancel_order(self, order_id: int) -> bool:
+    def cancel_order(self, order_id: int, owner: str | None = None) -> bool:
         for index, order in enumerate(self.bids):
-            if order.order_id == order_id:
+            if order.identity == (owner, order_id):
                 self.bids.pop(index)
-                del self._arrival_sequences[id(order)]
+                del self._arrival_sequences[order.identity]
                 return True
 
         for index, order in enumerate(self.asks):
-            if order.order_id == order_id:
+            if order.identity == (owner, order_id):
                 self.asks.pop(index)
-                del self._arrival_sequences[id(order)]
+                del self._arrival_sequences[order.identity]
                 return True
 
         return False
@@ -73,9 +75,9 @@ class OrderBook:
             return None
 
         return (
-            best_bid.price
-            + best_ask.price
-        ) / 2
+            best_bid.price / 2
+            + best_ask.price / 2
+        )
 
 
     def match_orders(self) -> list[Trade]:
@@ -88,14 +90,20 @@ class OrderBook:
             if best_bid.price < best_ask.price:
                 break
 
+            bid_arrival = self._arrival_sequences[best_bid.identity]
+            ask_arrival = self._arrival_sequences[best_ask.identity]
+            if best_bid.owner is not None and best_bid.owner == best_ask.owner:
+                incoming = best_bid if bid_arrival > ask_arrival else best_ask
+                self.cancel_order(incoming.order_id, incoming.owner)
+                continue
+
             trade_quantity = min(
                 best_bid.quantity,
                 best_ask.quantity
             )
 
             if (
-                self._arrival_sequences[id(best_bid)]
-                < self._arrival_sequences[id(best_ask)]
+                bid_arrival < ask_arrival
             ):
                 trade_price = best_bid.price
             else:
@@ -105,7 +113,9 @@ class OrderBook:
                 buy_order_id=best_bid.order_id,
                 sell_order_id=best_ask.order_id,
                 price=trade_price,
-                quantity=trade_quantity
+                quantity=trade_quantity,
+                buyer_owner=best_bid.owner,
+                seller_owner=best_ask.owner
             )
 
             trades.append(trade)
@@ -115,10 +125,10 @@ class OrderBook:
 
             if best_bid.quantity == 0:
                 self.bids.pop(0)
-                del self._arrival_sequences[id(best_bid)]
+                del self._arrival_sequences[best_bid.identity]
 
             if best_ask.quantity == 0:
                 self.asks.pop(0)
-                del self._arrival_sequences[id(best_ask)]
+                del self._arrival_sequences[best_ask.identity]
 
         return trades

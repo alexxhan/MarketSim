@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from enum import Enum
 from time import time
 
+from .validation import positive_price, positive_quantity
+
 
 class OrderSide(str, Enum):
     BUY = "BUY"
@@ -15,13 +17,17 @@ class Order:
     price: float
     quantity: int
     timestamp: float = 0.0
+    owner: str | None = None
+
+    @property
+    def identity(self) -> tuple[str | None, int]:
+        return self.owner, self.order_id
 
     def __post_init__(self):
         if self.timestamp == 0.0:
             self.timestamp = time()
 
-        if self.price <= 0:
-            raise ValueError("Price must be greater than 0")
-
-        if self.quantity <= 0:
-            raise ValueError("Quantity must be greater than 0")
+        positive_price(self.price)
+        positive_quantity(self.quantity)
+        if self.side not in (OrderSide.BUY, OrderSide.SELL):
+            raise ValueError("Unsupported order side")
