@@ -24,14 +24,11 @@ def show_quotes(label):
     print(f"Ask: ${ask.price:.2f}")
 
 
-# Neutral
 market_maker.portfolio.inventory = 0
 show_quotes("NEUTRAL")
 
-# Long
 market_maker.portfolio.inventory = 30
 show_quotes("LONG")
 
-# Short
 market_maker.portfolio.inventory = -30
 show_quotes("SHORT")
