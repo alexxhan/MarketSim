@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { scenarioPresets } from "../scenarios";
 import {
   CartesianGrid,
@@ -39,8 +39,9 @@ type MetricDefinition<T> = {
 const simulationMetrics: MetricDefinition<SimulationResults>[] = [
   { key: "final_pnl", label: "Final P&L", group: "Performance", format: "money" },
   { key: "final_inventory", label: "Final Inventory", group: "Inventory Risk" },
-  { key: "final_portfolio_value", label: "Portfolio Value", group: "Performance", format: "money" },
+  { key: "maximum_absolute_inventory", label: "Maximum Absolute Inventory", group: "Inventory Risk" },
   { key: "market_maker_fills", label: "Market Maker Fills", group: "Execution" },
+  { key: "final_portfolio_value", label: "Portfolio Value", group: "Performance", format: "money" },
   { key: "final_cash", label: "Cash", group: "Performance", format: "money" },
   { key: "pnl_per_fill", label: "P&L per Fill", group: "Performance", format: "money" },
   { key: "final_midprice", label: "Final Midprice", group: "Performance", format: "money" },
@@ -55,7 +56,6 @@ const simulationMetrics: MetricDefinition<SimulationResults>[] = [
     group: "Inventory Risk",
     format: "decimal",
   },
-  { key: "maximum_absolute_inventory", label: "Maximum Absolute Inventory", group: "Inventory Risk" },
 ];
 const aggregateMetrics: MetricDefinition<ExperimentAggregate>[] = [
   { key: "average_pnl", label: "Average P&L", group: "Performance", format: "money" },
@@ -226,6 +226,7 @@ function ChartCard({
   linear = false,
   dots = false,
   connectNulls = false,
+  syncId,
   boundaries = [],
 }: {
   title: string;
@@ -242,6 +243,7 @@ function ChartCard({
   linear?: boolean;
   dots?: boolean;
   connectNulls?: boolean;
+  syncId?: string;
   boundaries?: ScenarioResponse["regime_boundaries"];
 }) {
   return (
@@ -255,7 +257,12 @@ function ChartCard({
       </div>
       <div className="chart-canvas">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={data} margin={{ top: boundaries.length ? 32 : 12, right: 20, left: 8, bottom: 8 }}>
+          <LineChart
+            data={data}
+            syncId={syncId}
+            syncMethod="value"
+            margin={{ top: boundaries.length ? 32 : 12, right: 20, left: 8, bottom: 8 }}
+          >
             <CartesianGrid vertical={false} stroke="#26313d" strokeDasharray="3 5" />
             <XAxis
               dataKey={xKey}
@@ -346,6 +353,7 @@ function SimulationAnalytics({
   scenario?: ScenarioResponse;
   single?: boolean;
 }) {
+  const syncId = useId();
   const present = strategies.filter((strategy) => runs[strategy]);
   const values = present.map((strategy) => ({ strategy, values: runs[strategy]!.results }));
   return (
@@ -373,6 +381,7 @@ function SimulationAnalytics({
         ).map(([metric, title, subtitle]) => (
           <ChartCard
             key={metric}
+            syncId={syncId}
             title={title}
             subtitle={subtitle}
             primary={metric === "pnl"}
@@ -620,9 +629,6 @@ export function ResultsWorkspace({ result, onAdjust }: { result: RunResult; onAd
 export function EmptyResults({ onConfigure }: { onConfigure: () => void }) {
   return (
     <div className="empty-results">
-      <div className="empty-symbol" aria-hidden="true">
-        ∑
-      </div>
       <p className="eyebrow">Analytics workspace</p>
       <h2>Your first market path starts here.</h2>
       <p>

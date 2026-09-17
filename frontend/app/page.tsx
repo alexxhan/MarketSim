@@ -85,11 +85,6 @@ export default function Home() {
                       : "Configure a seeded market-making simulation."}
                   </p>
                 </div>
-                <div className="workflow">
-                  <span className="current">01 Configure</span>
-                  <span>02 Run</span>
-                  <span>03 Analyze</span>
-                </div>
               </div>
               <div className="configuration-layout">
                 <SimulationTypeSelector mode={mode} onChange={selectMode} disabled={loading} />

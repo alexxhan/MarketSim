@@ -60,6 +60,8 @@ function RangeField({
   max,
   step = 1,
   display,
+  scale = 1,
+  unit,
   hint,
 }: {
   label: string;
@@ -69,30 +71,51 @@ function RangeField({
   max: number;
   step?: number;
   display?: string;
-  hint: string;
+  scale?: number;
+  unit?: string;
+  hint?: string;
 }) {
   const id = useId();
   return (
     <div className="field range-field">
       <div className="field-label">
         <label htmlFor={id}>{label}</label>
-        <output htmlFor={id}>{display ?? value}</output>
+        <div className="range-value">
+          <input
+            type="number"
+            aria-label={`${label} value`}
+            aria-describedby={hint ? `${id}-hint` : undefined}
+            required
+            min={min * scale}
+            max={max * scale}
+            step={step * scale}
+            value={Number.isFinite(value) ? Number((value * scale).toFixed(6)) : ""}
+            onChange={(event) => onChange(event.target.valueAsNumber / scale)}
+          />
+          {unit && <span>{unit}</span>}
+        </div>
       </div>
       <input
         id={id}
         type="range"
-        style={{ "--range-progress": `${((value - min) / (max - min)) * 100}%` } as CSSProperties}
+        style={
+          {
+            "--range-progress": `${Number.isFinite(value) ? Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100)) : 0}%`,
+          } as CSSProperties
+        }
         min={min}
         max={max}
         step={step}
-        value={value}
+        value={Number.isFinite(value) ? value : min}
         aria-valuetext={display}
-        aria-describedby={`${id}-hint`}
+        aria-describedby={hint ? `${id}-hint` : undefined}
         onChange={(event) => onChange(Number(event.target.value))}
       />
-      <p id={`${id}-hint`} className="field-hint">
-        {hint}
-      </p>
+      {hint && (
+        <p id={`${id}-hint`} className="field-hint">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -102,14 +125,16 @@ function ParameterSection({
   title,
   description,
   children,
+  className = "",
 }: {
   number: string;
   title: string;
   description?: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <section className="parameter-section">
+    <section className={`parameter-section ${className}`}>
       <div className="section-heading">
         <span className="section-number">{number}</span>
         <div>
@@ -151,7 +176,6 @@ export function SimulationTypeSelector({
                 {item.label}
                 <span aria-hidden="true">{mode === item.id ? "\u2197" : "\u2192"}</span>
               </span>
-              <span className="mode-description">{item.description}</span>
             </button>
           ))}
       </div>
@@ -333,7 +357,7 @@ export function ConfigurationPanel({
                   hint="The sequence is reused at every sweep value."
                 />
                 <p className="section-note">
-                  {sweepParameters[config.sweepParameter].label} is set by the sweep values above.
+                  {sweepParameters[config.sweepParameter].label} controlled by sweep values.
                   {config.sweepParameter === "inventory_risk_factor" &&
                     " Basic remains an unchanged baseline; only Inventory-Aware is affected."}
                 </p>
@@ -355,7 +379,16 @@ export function ConfigurationPanel({
                     ))}
                   </select>
                 </div>
-                <ol className="regime-preview">
+                <ol
+                  className="regime-preview"
+                  style={
+                    {
+                      "--regime-columns": preset.regimes
+                        .map((regime) => `minmax(0, ${regime.duration_ticks}fr)`)
+                        .join(" "),
+                    } as CSSProperties
+                  }
+                >
                   {preset.regimes.map((regime, index, regimes) => {
                     const start =
                       1 + regimes.slice(0, index).reduce((sum, item) => sum + item.duration_ticks, 0);
@@ -410,7 +443,6 @@ export function ConfigurationPanel({
                 max={5000}
                 step={100}
                 onChange={(value) => update("ticks", value)}
-                hint="Simulation duration, measured in discrete steps."
               />
               {!swept("volatility") && (
                 <RangeField
@@ -430,6 +462,8 @@ export function ConfigurationPanel({
                   max={1}
                   step={0.05}
                   display={`${(config.buyPressure * 100).toFixed(0)}%`}
+                  scale={100}
+                  unit="%"
                   onChange={(value) => update("buyPressure", value)}
                   hint="50% balances incoming buy and sell orders."
                 />
@@ -441,6 +475,7 @@ export function ConfigurationPanel({
                   min={1}
                   max={10}
                   display={`${config.orderArrivalRate} orders / tick`}
+                  unit="orders / tick"
                   onChange={(value) => update("orderArrivalRate", value)}
                   hint="Fixed number of external orders per tick."
                 />
@@ -448,7 +483,11 @@ export function ConfigurationPanel({
             </>
           )}
         </ParameterSection>
-        <ParameterSection number={isExperiment(mode) ? "03" : "02"} title="Strategy parameters">
+        <ParameterSection
+          number={isExperiment(mode) ? "03" : "02"}
+          title="Strategy parameters"
+          className="strategy-parameters"
+        >
           {!swept("spread") && (
             <NumberField
               label="Spread"
@@ -456,7 +495,6 @@ export function ConfigurationPanel({
               min={0.01}
               step={0.01}
               onChange={(value) => update("spread", value)}
-              hint="Distance between the bid and ask quotes."
             />
           )}
           <NumberField
@@ -464,7 +502,6 @@ export function ConfigurationPanel({
             value={config.orderSize}
             min={1}
             onChange={(value) => update("orderSize", value)}
-            hint="Units placed on each side of the market."
           />
           {hasInventory && !swept("inventory_risk_factor") && (
             <NumberField

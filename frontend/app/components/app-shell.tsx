@@ -43,13 +43,8 @@ export function AppHeader({
     <header className="app-header">
       <div className="brand-row">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            M<span>/</span>S
-          </span>
-          <div>
-            <h1>MarketSim</h1>
-            <p>Market Making Simulation &amp; Strategy Laboratory</p>
-          </div>
+          <h1>MarketSim</h1>
+          <p>Market Making Simulation &amp; Strategy Laboratory</p>
         </div>
         <div className={`api-status ${status}`} role="status">
           <span />
@@ -78,9 +73,6 @@ export function AppHeader({
             </button>
           ))}
         </nav>
-        <span className="environment-label">
-          LIMIT ORDER BOOK <span>/</span> SIMULATION
-        </span>
       </div>
     </header>
   );
